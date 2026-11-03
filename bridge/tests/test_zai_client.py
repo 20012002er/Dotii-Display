@@ -148,6 +148,41 @@ class UsageSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["weekly_remaining_percent"], 0)
         self.assertEqual(snapshot["weekly_reset_date"], "")
 
+    def test_multiple_tokens_limits_extracts_weekly_window(self) -> None:
+        """API 返回多个 TOKENS_LIMIT 时，第一个为 5 小时窗口，其余中取重置最晚的为周窗口。"""
+        payload = {
+            "success": True,
+            "data": {"level": "pro", "limits": [
+                {"type": "TOKENS_LIMIT", "percentage": 38, "nextResetTime": 1790828271625},
+                {"type": "TOKENS_LIMIT", "percentage": 80, "nextResetTime": 1790941648947},
+            ]},
+        }
+        snapshot = usage_snapshot(payload, datetime.fromtimestamp(1790828271.625))
+        self.assertTrue(snapshot["five_hour_available"])
+        self.assertEqual(snapshot["five_hour_remaining_percent"], 62)
+        self.assertTrue(snapshot["weekly_available"])
+        self.assertEqual(snapshot["weekly_remaining_percent"], 20)
+        expected = datetime.fromtimestamp(1790941648.947).strftime("%m-%d %H:%M")
+        self.assertEqual(snapshot["weekly_reset_date"], expected)
+
+    def test_tokens_limit_with_credit_limit_fallback_for_weekly(self) -> None:
+        """API 返回一个 TOKENS_LIMIT（5 小时）和一个 CREDIT_LIMIT（每周）时，两者都能正确提取。"""
+        payload = {
+            "success": True,
+            "data": {"level": "pro", "limits": [
+                {"type": "TOKENS_LIMIT", "percentage": 45, "nextResetTime": 1790828271625},
+                {"type": "CREDIT_LIMIT", "unit": 6, "number": 1, "percentage": 72,
+                 "nextResetTime": 1791440113999},
+            ]},
+        }
+        snapshot = usage_snapshot(payload, datetime.fromtimestamp(1790828271.625))
+        self.assertTrue(snapshot["five_hour_available"])
+        self.assertEqual(snapshot["five_hour_remaining_percent"], 55)
+        self.assertTrue(snapshot["weekly_available"])
+        self.assertEqual(snapshot["weekly_remaining_percent"], 28)
+        expected = datetime.fromtimestamp(1791440113.999).strftime("%m-%d %H:%M")
+        self.assertEqual(snapshot["weekly_reset_date"], expected)
+
     def test_credit_limit_epoch_seconds_and_numeric_string_are_accepted(self) -> None:
         base = {"type": "CREDIT_LIMIT", "percentage": 10}
         for reset in (1790828271, "1790828271625"):

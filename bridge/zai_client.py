@@ -124,6 +124,20 @@ def _is_weekly_window(item: dict[str, Any]) -> bool:
     return item.get("number") == 1 and item.get("unit") == 6
 
 
+def _find_weekly_in_limits(items: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """从候选窗口列表中查找每周窗口：优先语义匹配，兜底按重置时间取最晚的。"""
+    if not items:
+        return None
+    semantic = next((item for item in items if _is_weekly_window(item)), None)
+    if semantic is not None:
+        return semantic
+    # 无语义标识时按重置时间排序，取最晚的（周期最长的窗口重置最晚）。
+    valid = [item for item in items if _reset_epoch(item) != float("inf")]
+    if valid:
+        return max(valid, key=_reset_epoch)
+    return None
+
+
 def usage_snapshot(payload: Any, now: datetime | None = None) -> dict[str, Any]:
     """把 quota/limit 响应规范化为快照字段（纯函数，缺失数据全部安全降级）。"""
     now = now or datetime.now()
@@ -157,6 +171,12 @@ def usage_snapshot(payload: Any, now: datetime | None = None) -> dict[str, Any]:
         weekly_item: dict[str, Any] | None = None
         if token_limits:
             five_hour_item = token_limits[0]
+            # 多个 TOKENS_LIMIT 时，剩余条目可能包含每周窗口。
+            weekly_item = _find_weekly_in_limits(token_limits[1:])
+            if weekly_item is None:
+                # TOKENS_LIMIT 不含每周数据时，从 CREDIT_LIMIT 补充查找。
+                credit_limits = [item for item in entries if item.get("type") == "CREDIT_LIMIT"]
+                weekly_item = _find_weekly_in_limits(credit_limits)
         else:
             # 真实接口使用 CREDIT_LIMIT，并以 unit/number 语义标识窗口
             # （unit=3,number=5 = 5 小时；unit=6,number=1 = 1 周）。5 小时窗
