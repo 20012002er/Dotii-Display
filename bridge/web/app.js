@@ -28,6 +28,7 @@ const state = {
   notionLoaded: false,
   notionChecking: false,
   notionCheck: null,
+  lastNotionTodos: null,
   claudecodeBusy: false,
   bluetoothModeTouched: false,
   displayDirty: false,
@@ -872,6 +873,34 @@ function renderNotion(notion = {}, config = {}, enabled = true) {
     list.append(emptyItem);
   } else {
     preview.hidden = true;
+  }
+  
+  // 检查是否需要自动同步 Notion 数据到设备
+  checkNotionAutoSync(notion, config);
+}
+
+function checkNotionAutoSync(notion, config) {
+  // 如果 Notion 未启用或未连接，不需要同步
+  if (!config.enabled || !notion.connected) {
+    return;
+  }
+  
+  const todos = notion.todos || [];
+  const todosKey = JSON.stringify(todos.map(t => t.title));
+  
+  // 如果待办内容没有变化，不需要同步
+  if (state.lastNotionTodos === todosKey) {
+    return;
+  }
+  
+  // 记录上次同步的内容
+  state.lastNotionTodos = todosKey;
+  
+  // 如果自定义界面已启用，自动同步到设备
+  const customEnabled = byId("custom-enabled")?.checked;
+  if (customEnabled && !state.customSaving) {
+    console.log("[Notion] 检测到待办变化，自动同步到设备");
+    persistCustom({ announce: false, silent: true });
   }
 }
 
@@ -2230,14 +2259,14 @@ async function selectBuiltInExpression(button) {
   }
 }
 
-async function persistCustom({ announce = true, previousEnabled = null } = {}) {
+async function persistCustom({ announce = true, previousEnabled = null, silent = false } = {}) {
   if (state.customSaving) return;
   const custom = customFormValue();
   state.customSaving = true;
   const button = byId("save-custom");
   button.disabled = true;
   button.textContent = "正在保存…";
-    setText("custom-save-state", "正在保存");
+  if (!silent) setText("custom-save-state", "正在保存");
   try {
     const renderToken = await stageCustomRender(custom);
     const response = await fetch("/api/v1/admin/custom", {
@@ -2250,15 +2279,15 @@ async function persistCustom({ announce = true, previousEnabled = null } = {}) {
     state.customDirty = false;
     populateCustomForm(result.custom || custom);
     setText("custom-nav-state", custom.enabled ? "已启用" : "未启用");
-    if (announce) showToast(custom.enabled ? "自定义页面已启用并同步" : "自定义页面已关闭，设备入口已隐藏");
+    if (announce && !silent) showToast(custom.enabled ? "自定义页面已启用并同步" : "自定义页面已关闭，设备入口已隐藏");
   } catch (error) {
     if (previousEnabled !== null) {
       byId("custom-enabled").checked = previousEnabled;
       byId("custom-settings").hidden = !previousEnabled;
       renderCustomPreview();
     }
-    setText("custom-save-state", "保存失败，请检查内容后重试");
-    showToast(error.message || "保存失败");
+    if (!silent) setText("custom-save-state", "保存失败，请检查内容后重试");
+    if (!silent) showToast(error.message || "保存失败");
   } finally {
     state.customSaving = false;
     button.disabled = false;
