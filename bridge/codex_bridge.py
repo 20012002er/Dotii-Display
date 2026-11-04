@@ -33,6 +33,7 @@ from urllib.parse import unquote, urlparse
 from codex_app_server import probe_app_server, run_collector
 from bambu_client import BambuConfigStore, BambuService
 from zai_client import ZaiConfigStore, ZaiService
+from notion_client import NotionConfigStore, NotionService
 from claudecode_client import (
     PERMISSION_WAIT_SECONDS,
     ClaudeCodeMonitor,
@@ -88,7 +89,7 @@ CUSTOM_DEFAULTS = {
     "ring_start": "#F2C66D",
     "ring_end": "#5DA9FF",
 }
-MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "claudecode": False, "dotii": True}
+MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True}
 
 
 def resolve_ffmpeg(runtime_folder: Path) -> str | None:
@@ -1286,6 +1287,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "display_config": self.bridge.display.read(),
             "bambu_config": self.bridge.bambu_config.public(),
             "zai_config": self.bridge.zai_config.public(),
+            "notion_config": self.bridge.notion_config.public(),
             "bluetooth": self.bridge.bluetooth.snapshot(),
             "ble_link": self.bridge.ble_link.snapshot(),
             "firmware": self.bridge.firmware.snapshot(),
@@ -1293,6 +1295,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 {"id": "codex", "name": "Codex", "enabled": snapshot["modules"]["codex"], "available": True, "locked": False},
                 {"id": "bambu", "name": "Bambu", "enabled": snapshot["modules"]["bambu"], "available": True, "locked": False},
                 {"id": "zai", "name": "Z.ai", "enabled": snapshot["modules"]["zai"], "available": True, "locked": False},
+                {"id": "notion", "name": "Notion", "enabled": snapshot["modules"].get("notion", False), "available": True, "locked": False},
                 {"id": "claudecode", "name": "Claude Code", "enabled": snapshot["modules"]["claudecode"], "available": True, "locked": False},
                 {"id": "custom", "name": "自定义", "enabled": snapshot["custom"]["enabled"], "available": True, "locked": False},
                 {"id": "dotii", "name": "Dotii", "enabled": snapshot["modules"]["dotii"], "available": True, "locked": False},
@@ -1465,6 +1468,26 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 config = self.bridge.zai_config.write(self._read_admin_action(), preserve_secret=True)
                 self.bridge.zai.reconfigure()
                 self._send_json(HTTPStatus.OK, {"ok": True, "zai_config": config})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        if path == "/api/v1/admin/notion/config":
+            if self._deny_nonlocal():
+                return
+            try:
+                config = self.bridge.notion_config.write(self._read_admin_action(), preserve_secret=True)
+                self.bridge.notion.reconfigure()
+                self._send_json(HTTPStatus.OK, {"ok": True, "notion_config": config})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        if path == "/api/v1/admin/notion/check":
+            if self._deny_nonlocal():
+                return
+            try:
+                self._read_admin_action()
+                result = self.bridge.notion.probe()
+                self._send_json(HTTPStatus.OK, result)
             except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
@@ -1675,7 +1698,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 module_id = payload.get("id")
                 enabled = payload.get("enabled")
                 if module_id not in MODULE_DEFAULTS or not isinstance(enabled, bool):
-                    raise ValueError("id must be codex, bambu, zai, claudecode or dotii and enabled must be boolean")
+                    raise ValueError("id must be codex, bambu, zai, notion, claudecode or dotii and enabled must be boolean")
                 modules = self.bridge.modules.read()
                 candidate = {**modules, module_id: enabled}
                 if not any(candidate.values()) and not self.bridge.custom.read()["enabled"]:
@@ -1690,6 +1713,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     self.bridge.bambu.set_enabled(enabled)
                 elif module_id == "zai":
                     self.bridge.zai.set_enabled(enabled)
+                elif module_id == "notion":
+                    self.bridge.notion.set_enabled(enabled)
                 elif module_id == "claudecode":
                     self.bridge.claudecode.set_enabled(enabled)
                 self._send_json(HTTPStatus.OK, {"ok": True, "modules": saved})
@@ -1771,6 +1796,8 @@ class BridgeServer(ThreadingHTTPServer):
         zai_config: ZaiConfigStore,
         zai: ZaiService,
         zai_check: CodexCheckStore,
+        notion_config: NotionConfigStore,
+        notion: NotionService,
         claudecode: ClaudeCodeMonitor,
         claudecode_permission: PermissionBroker,
         claudecode_config: ClaudeCodeConfigStore,
@@ -1798,6 +1825,8 @@ class BridgeServer(ThreadingHTTPServer):
         self.zai_config = zai_config
         self.zai = zai
         self.zai_check = zai_check
+        self.notion_config = notion_config
+        self.notion = notion
         self.claudecode = claudecode
         self.claudecode_permission = claudecode_permission
         self.claudecode_config = claudecode_config
@@ -1819,6 +1848,7 @@ class BridgeServer(ThreadingHTTPServer):
         snapshot["custom"] = custom
         snapshot["bambu"] = self.bambu.snapshot()
         snapshot["zai"] = self.zai.snapshot()
+        snapshot["notion"] = self.notion.snapshot()
         snapshot["claudecode"] = self.claudecode.snapshot(self.modules.read()["claudecode"])
         snapshot["claudecode"]["permission"] = self.claudecode_permission.snapshot()
         modules = self.modules.read()
@@ -1881,6 +1911,12 @@ def main() -> None:
         lambda: modules.read()["zai"],
     )
     zai.start()
+    notion_config = NotionConfigStore(writable_root / "notion.json")
+    notion = NotionService(
+        notion_config,
+        lambda: modules.read().get("notion", False),
+    )
+    notion.start()
     claudecode = ClaudeCodeMonitor()
     claudecode_permission = PermissionBroker(
         module_enabled=lambda: modules.read()["claudecode"])
@@ -1906,7 +1942,8 @@ def main() -> None:
     firmware = FirmwareFlasher(project_root(), writable_root)
     server = BridgeServer((arguments.host, arguments.port), store, token, runtime, collector_restart,
                           custom, modules, dotii, display, codex_check, assets, bambu_config, bambu,
-                          zai_config, zai, zai_check, claudecode, claudecode_permission,
+                          zai_config, zai, zai_check, notion_config, notion,
+                          claudecode, claudecode_permission,
                           claudecode_config,
                           bluetooth, ble_link, firmware, writable_root, application_root(),
                           arguments.codex_command, arguments.parent_pid)
@@ -1948,6 +1985,8 @@ def main() -> None:
     finally:
         stop.set()
         bambu.stop()
+        zai.stop()
+        notion.stop()
         bluetooth.stop()
         firmware.stop()
         server.server_close()

@@ -809,6 +809,57 @@ button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
 .dotii-config-actions .primary-button { white-space: nowrap; }
 .dotii-preferences { margin-top: 28px; }
 
+.notion-todos-preview {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-soft);
+}
+.notion-todos-preview[hidden] { display: none; }
+.notion-todos-preview h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--muted-strong);
+}
+.notion-todos-preview ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.notion-todos-preview li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--text);
+}
+.notion-todos-preview li::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--blue);
+}
+.notion-todos-preview .todo-status {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+.notion-todos-preview .todo-empty {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 16px;
+}
+
 @media (max-width: 900px) {
   .app-shell { width: min(100% - 28px, 760px); }
   .codex-overview, .custom-editor { grid-template-columns: 1fr; }

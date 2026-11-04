@@ -558,6 +558,43 @@
             </label>
           </div>
           <div class="notice-line">关闭后保留当前画面内容，下次启用时可继续编辑和同步。</div>
+
+          <article class="dependency-panel module-preference-card" id="notion-panel">
+            <div class="dependency-heading">
+              <div>
+                <h3>Notion 待办同步</h3>
+                <p>从 Notion 数据库读取今日待办事项，显示在自定义界面上。</p>
+              </div>
+              <label class="module-switch">
+                <span>启用同步</span>
+                <input id="notion-enabled" type="checkbox">
+                <span class="switch-track" aria-hidden="true"></span>
+              </label>
+            </div>
+            <form class="bambu-card module-preference-card" id="notion-form">
+              <div class="card-heading"><div><h3>Notion 配置</h3><p>在 Notion 中创建集成并获取 API Key，然后指定待办数据库 ID。</p></div><span class="status-pill" id="notion-connection">尚未配置</span></div>
+              <div class="bambu-fields settings-bambu-fields">
+                <label><span>API Key</span><input id="notion-api-key" type="password" maxlength="200" autocomplete="new-password" placeholder="ntn_..."></label>
+                <label><span>数据库 ID</span><input id="notion-database-id" maxlength="100" autocomplete="off" placeholder="数据库 URL 中的 ID"></label>
+              </div>
+              <p class="bambu-help">在 <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener">Notion 集成页面</a> 创建集成后获取 API Key。数据库 ID 可从数据库 URL 中提取（32 位十六进制字符串）。</p>
+              <div class="form-actions">
+                <button class="primary-button" type="submit">保存配置</button>
+                <button class="quiet-button" id="notion-check" type="button">测试连接</button>
+              </div>
+            </form>
+            <div class="dependency-details" id="notion-check-details" hidden>
+              <div><span>网络连接</span><strong id="notion-check-network">--</strong></div>
+              <div><span>API Key 认证</span><strong id="notion-check-auth">--</strong></div>
+              <div><span>数据解析</span><strong id="notion-check-parse">--</strong></div>
+              <div><span>今日待办</span><strong id="notion-check-count">--</strong></div>
+            </div>
+            <p class="dependency-status" id="notion-check-detail" role="status" aria-live="polite" hidden>尚未检测</p>
+            <div class="notion-todos-preview" id="notion-todos-preview" hidden>
+              <h4>今日待办预览</h4>
+              <ul id="notion-todos-list"></ul>
+            </div>
+          </article>
         </section>
       </section>
 

@@ -25,6 +25,9 @@ const state = {
   zaiLoaded: false,
   zaiChecking: false,
   zaiCheck: null,
+  notionLoaded: false,
+  notionChecking: false,
+  notionCheck: null,
   claudecodeBusy: false,
   bluetoothModeTouched: false,
   displayDirty: false,
@@ -820,6 +823,148 @@ async function checkZai() {
   }
 }
 
+// Notion 待办同步相关函数
+const NOTION_STATE_TEXT = {
+  disabled: "已关闭",
+  needs_configuration: "等待配置",
+  online: "已连接",
+  error: "连接异常",
+  connecting: "连接中",
+};
+
+function renderNotion(notion = {}, config = {}, enabled = true) {
+  if (!state.notionLoaded) {
+    byId("notion-api-key").placeholder = config.has_api_key ? "已保存，留空表示不修改" : "ntn_...";
+    byId("notion-database-id").value = config.has_database_id ? byId("notion-database-id").value : "";
+    byId("notion-enabled").checked = Boolean(config.enabled);
+    state.notionLoaded = true;
+  }
+  const configured = Boolean(config.configured);
+  const connected = Boolean(notion.connected);
+  const connectionPill = byId("notion-connection");
+  connectionPill.textContent = !enabled ? "已关闭" : connected ? "已连接" : configured ? "连接中" : "尚未配置";
+  connectionPill.dataset.state = !enabled ? "" : connected ? "online" : configured ? "waiting" : "";
+  
+  // 更新待办预览
+  const preview = byId("notion-todos-preview");
+  const list = byId("notion-todos-list");
+  const todos = notion.todos || [];
+  
+  if (enabled && configured && todos.length > 0) {
+    preview.hidden = false;
+    list.replaceChildren();
+    todos.forEach((todo) => {
+      const item = document.createElement("li");
+      const titleSpan = document.createElement("span");
+      titleSpan.textContent = todo.title || "未命名待办";
+      const statusSpan = document.createElement("span");
+      statusSpan.className = "todo-status";
+      statusSpan.textContent = todo.status || "";
+      item.append(titleSpan, statusSpan);
+      list.append(item);
+    });
+  } else if (enabled && configured) {
+    preview.hidden = false;
+    list.replaceChildren();
+    const emptyItem = document.createElement("li");
+    emptyItem.className = "todo-empty";
+    emptyItem.textContent = notion.last_error || "今日暂无待办事项";
+    list.append(emptyItem);
+  } else {
+    preview.hidden = true;
+  }
+}
+
+function renderNotionCheck(result, enabled = true) {
+  const button = byId("notion-check");
+  button.disabled = !enabled || state.notionChecking;
+  const details = byId("notion-check-details");
+  const detail = byId("notion-check-detail");
+  
+  if (!result) {
+    details.hidden = true;
+    detail.hidden = true;
+    return;
+  }
+  
+  details.hidden = false;
+  detail.hidden = false;
+  setText("notion-check-network", result.network?.ok ? "正常" : (result.network?.detail || "--"));
+  setText("notion-check-auth", result.auth?.ok ? "通过" : (result.auth?.detail || "--"));
+  setText("notion-check-parse", result.parse?.ok ? "成功" : (result.parse?.detail || "--"));
+  setText("notion-check-count", result.ok ? `${result.today_count || 0} 条` : "--");
+  setText("notion-check-detail", result.detail || (result.ok ? "Notion 连接正常。" : "Notion 功能检测异常。"));
+}
+
+async function checkNotion() {
+  if (state.notionChecking) return;
+  state.notionChecking = true;
+  renderNotionCheck(null, true);
+  try {
+    const response = await fetch("/api/v1/admin/notion/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "检测失败");
+    state.notionCheck = result;
+    renderNotionCheck(result, true);
+    if (result.ok) {
+      showToast(`Notion 连接成功，今日 ${result.today_count || 0} 条待办`);
+    } else {
+      showToast(result.detail || "Notion 连接异常");
+    }
+  } catch (error) {
+    showToast(error.message || "Notion 检测失败");
+  } finally {
+    state.notionChecking = false;
+    renderNotionCheck(state.notionCheck, byId("notion-enabled").checked);
+  }
+}
+
+async function saveNotion(event) {
+  event.preventDefault();
+  const payload = {
+    api_key: byId("notion-api-key").value,
+    database_id: byId("notion-database-id").value.trim(),
+    enabled: byId("notion-enabled").checked,
+  };
+  try {
+    const response = await fetch("/api/v1/admin/notion/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "保存失败");
+    showToast("Notion 配置已保存");
+    byId("notion-api-key").value = "";
+    byId("notion-api-key").placeholder = "已保存，留空表示不修改";
+    await refreshOverview();
+  } catch (error) {
+    showToast(error.message || "保存失败");
+  }
+}
+
+byId("notion-enabled").addEventListener("change", async (event) => {
+  const enabled = event.target.checked;
+  try {
+    const response = await fetch("/api/v1/admin/notion/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "更新失败");
+    showToast(enabled ? "Notion 同步已启用" : "Notion 同步已关闭");
+    await refreshOverview();
+  } catch (error) {
+    showToast(error.message || "更新失败");
+    event.target.checked = !enabled;
+  }
+});
+
 const CLAUDECODE_STATE_COLORS = {
   working: "var(--green)", completed: "var(--green)", waiting_user: "var(--warning)",
   failed: "var(--danger)", idle: "var(--muted)", offline: "var(--muted)",
@@ -1221,7 +1366,7 @@ function renderBluetooth(bluetooth = {}) {
 }
 
 function customFormValue() {
-  return {
+  const result = {
     enabled: byId("custom-enabled").checked,
     title: byId("custom-title").value.trim(),
     value: byId("custom-value").value.trim(),
@@ -1243,6 +1388,18 @@ function customFormValue() {
     ring_start: byId("custom-ring-start").value.toUpperCase(),
     ring_end: byId("custom-ring-end").value.toUpperCase(),
   };
+  
+  // 如果 Notion 同步启用且有数据，覆盖自定义字段
+  const notionEnabled = byId("notion-enabled")?.checked;
+  const notionData = state.overview?.snapshot?.notion;
+  if (notionEnabled && notionData?.connected && Array.isArray(notionData.todos) && notionData.todos.length > 0) {
+    result.title = "Notion 待办";
+    result.value = notionData.todos.map((todo) => `• ${todo.title}`).join("\n").slice(0, 200);
+    result.body = "今日待办";
+    result.footer = new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
+  }
+  
+  return result;
 }
 
 function drawImageFitted(context, image, fit) {
@@ -1491,6 +1648,8 @@ function renderOverview(overview) {
   renderBambu(snapshot.bambu || {}, overview.bambu_config || {}, bambuEnabled);
   renderZai(snapshot.zai || {}, overview.zai_config || {}, zaiEnabled);
   renderZaiCheck(state.zaiCheck, zaiEnabled);
+  renderNotion(snapshot.notion || {}, overview.notion_config || {}, overview.notion_config?.enabled !== false);
+  renderNotionCheck(state.notionCheck, overview.notion_config?.enabled !== false);
   renderClaudecode(snapshot.claudecode || {}, claudecodeEnabled);
   const incomingDotiiConfig = overview.dotii_config;
   if (!state.dotiiConfigDirty && !state.dotiiConfigSaving && incomingDotiiConfig
@@ -2177,6 +2336,8 @@ byId("bambu-enabled").addEventListener("change", (event) => updateModule("bambu"
 byId("zai-enabled").addEventListener("change", (event) => updateModule("zai", event.target.checked));
 byId("zai-form").addEventListener("submit", saveZai);
 byId("zai-check").addEventListener("click", checkZai);
+byId("notion-form").addEventListener("submit", saveNotion);
+byId("notion-check").addEventListener("click", checkNotion);
 byId("claudecode-enabled").addEventListener("change", (event) => updateModule("claudecode", event.target.checked));
 byId("claudecode-hooks-install").addEventListener("click", () => installClaudecodeHooks("install"));
 byId("claudecode-hooks-remove").addEventListener("click", () => installClaudecodeHooks("remove"));
