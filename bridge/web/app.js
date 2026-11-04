@@ -29,6 +29,7 @@ const state = {
   notionChecking: false,
   notionCheck: null,
   lastNotionTodos: null,
+  ringAutoSaveTimer: null,
   claudecodeBusy: false,
   bluetoothModeTouched: false,
   displayDirty: false,
@@ -2456,10 +2457,22 @@ cropCanvas.addEventListener("pointercancel", stopCropDrag);
 document.querySelectorAll(".expression-option").forEach((button) => {
   button.addEventListener("click", () => selectBuiltInExpression(button));
 });
-byId("custom-form").addEventListener("input", () => {
+byId("custom-form").addEventListener("input", (event) => {
   state.customDirty = true;
   renderCustomPreview();
   setText("custom-save-state", "有尚未保存的修改");
+  
+  // 圆环颜色变化时自动保存
+  const target = event.target;
+  if (target.id === "custom-ring-start" || target.id === "custom-ring-end" || target.id === "custom-ring-enabled") {
+    clearTimeout(state.ringAutoSaveTimer);
+    state.ringAutoSaveTimer = setTimeout(() => {
+      if (state.customDirty && !state.customSaving) {
+        console.log("[Custom] 圆环设置变化，自动保存");
+        persistCustom({ announce: false, silent: true });
+      }
+    }, 1500);
+  }
 });
 
 setupUiSelects();
