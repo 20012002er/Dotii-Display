@@ -269,15 +269,8 @@ class NotionService:
         """查询 Notion 数据库获取今日待办。"""
         connection = http.client.HTTPSConnection(NOTION_API_HOST, timeout=REQUEST_TIMEOUT_SECONDS)
         try:
-            body = json.dumps({
-                "filter": {
-                    "property": "Date",
-                    "date": {
-                        "equals": datetime.now().strftime("%Y-%m-%d"),
-                    },
-                },
-                "page_size": 50,
-            })
+            # 不使用过滤器查询，在 Python 端过滤今日待办
+            body = json.dumps({"page_size": 50})
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Notion-Version": NOTION_VERSION,
