@@ -28,6 +28,7 @@ LV_FONT_DECLARE(ui_font_fixed_20);
 
 #define SCREEN_SIZE 466
 #define SAFE_SIZE 358
+#define CUSTOM_RING_SEGMENTS 32
 #define COLOR_BG 0x000000
 #define COLOR_SURFACE 0x141A19
 #define COLOR_TEXT 0xF1F8F5
@@ -153,7 +154,7 @@ static lv_obj_t *s_settings_bridge;
 static lv_obj_t *s_settings_reset_button;
 static lv_obj_t *s_settings_reset_detail;
 static lv_obj_t *s_brightness_slider;
-static lv_obj_t *s_custom_ring;
+static lv_obj_t *s_custom_ring[CUSTOM_RING_SEGMENTS];
 static lv_obj_t *s_custom_image;
 static lv_obj_t *s_custom_title;
 static lv_obj_t *s_custom_value;
@@ -255,6 +256,20 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *text,
 static lv_color_t color(uint32_t hex)
 {
     return lv_color_hex(hex);
+}
+
+static uint32_t custom_ring_color(uint32_t start, uint32_t end, uint8_t segment)
+{
+    const uint32_t last_segment = CUSTOM_RING_SEGMENTS - 1U;
+    const uint32_t end_weight = ((uint32_t)segment * 255U + last_segment / 2U) / last_segment;
+    const uint32_t start_weight = 255U - end_weight;
+    const uint32_t red = (((start >> 16) & 0xFFU) * start_weight +
+                          ((end >> 16) & 0xFFU) * end_weight + 127U) / 255U;
+    const uint32_t green = (((start >> 8) & 0xFFU) * start_weight +
+                            ((end >> 8) & 0xFFU) * end_weight + 127U) / 255U;
+    const uint32_t blue = ((start & 0xFFU) * start_weight +
+                           (end & 0xFFU) * end_weight + 127U) / 255U;
+    return (red << 16) | (green << 8) | blue;
 }
 
 static void set_screen_background(lv_obj_t *screen)
@@ -1899,18 +1914,22 @@ static void build_custom(void)
     lv_obj_add_flag(s_custom_image, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_custom_image, LV_OBJ_FLAG_CLICKABLE);
 
-    s_custom_ring = lv_arc_create(content);
-    lv_obj_set_size(s_custom_ring, SCREEN_SIZE, SCREEN_SIZE);
-    lv_obj_center(s_custom_ring);
-    lv_arc_set_range(s_custom_ring, 0, 100);
-    lv_arc_set_value(s_custom_ring, 100);
-    lv_arc_set_bg_angles(s_custom_ring, 0, 360);
-    lv_obj_set_style_arc_width(s_custom_ring, 26, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(s_custom_ring, color(0x2B2D28), LV_PART_MAIN);
-    lv_obj_set_style_arc_width(s_custom_ring, 26, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(s_custom_ring, color(COLOR_WARNING), LV_PART_INDICATOR);
-    lv_obj_remove_style(s_custom_ring, NULL, LV_PART_KNOB);
-    lv_obj_remove_flag(s_custom_ring, LV_OBJ_FLAG_CLICKABLE);
+    for (uint8_t segment = 0; segment < CUSTOM_RING_SEGMENTS; ++segment) {
+        lv_obj_t *arc = lv_arc_create(content);
+        s_custom_ring[segment] = arc;
+        lv_obj_set_size(arc, SCREEN_SIZE, SCREEN_SIZE);
+        lv_obj_center(arc);
+        lv_arc_set_range(arc, 0, 100);
+        lv_arc_set_value(arc, 100);
+        lv_arc_set_bg_angles(arc, segment * 360 / CUSTOM_RING_SEGMENTS,
+                             (segment + 1) * 360 / CUSTOM_RING_SEGMENTS);
+        lv_obj_set_style_arc_opa(arc, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_arc_width(arc, 26, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(arc, color(COLOR_WARNING), LV_PART_INDICATOR);
+        lv_obj_set_style_arc_rounded(arc, false, LV_PART_INDICATOR);
+        lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
+        lv_obj_remove_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+    }
 
     s_custom_title = make_label(content, "我的页面", &ui_font_detail_20, COLOR_MUTED);
     lv_label_set_long_mode(s_custom_title, LV_LABEL_LONG_DOT);
@@ -2943,8 +2962,11 @@ static void update_snapshot(const codex_snapshot_t *snapshot)
     lv_label_set_text(s_custom_body, snapshot->custom_body[0] ? snapshot->custom_body : "暂无说明");
     lv_label_set_text(s_custom_footer, snapshot->custom_footer[0] ? snapshot->custom_footer : "Dotii 自定义");
     lv_obj_set_style_text_color(s_custom_value, color(custom_accent), 0);
-    lv_obj_set_style_arc_color(s_custom_ring, color(snapshot->custom_ring_start), LV_PART_INDICATOR);
-    lv_arc_set_value(s_custom_ring, 100);
+    for (uint8_t segment = 0; segment < CUSTOM_RING_SEGMENTS; ++segment) {
+        uint32_t segment_color = custom_ring_color(snapshot->custom_ring_start,
+                                                   snapshot->custom_ring_end, segment);
+        lv_obj_set_style_arc_color(s_custom_ring[segment], color(segment_color), LV_PART_INDICATOR);
+    }
     const uint8_t *custom_image = snapshot->custom_image_available ?
         connectivity_custom_image_data(snapshot->custom_image_revision) : NULL;
     if (custom_image != NULL) {
@@ -2964,15 +2986,19 @@ static void update_snapshot(const codex_snapshot_t *snapshot)
             s_custom_image_revision = snapshot->custom_image_revision;
         }
         lv_obj_remove_flag(s_custom_image, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_custom_ring, LV_OBJ_FLAG_HIDDEN);
+        for (uint8_t segment = 0; segment < CUSTOM_RING_SEGMENTS; ++segment) {
+            lv_obj_add_flag(s_custom_ring[segment], LV_OBJ_FLAG_HIDDEN);
+        }
         lv_obj_add_flag(s_custom_title, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_custom_value, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_custom_body, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_custom_footer, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s_custom_image, LV_OBJ_FLAG_HIDDEN);
-        if (snapshot->custom_ring_enabled) lv_obj_remove_flag(s_custom_ring, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_custom_ring, LV_OBJ_FLAG_HIDDEN);
+        for (uint8_t segment = 0; segment < CUSTOM_RING_SEGMENTS; ++segment) {
+            if (snapshot->custom_ring_enabled) lv_obj_remove_flag(s_custom_ring[segment], LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(s_custom_ring[segment], LV_OBJ_FLAG_HIDDEN);
+        }
         lv_obj_remove_flag(s_custom_title, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(s_custom_value, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(s_custom_body, LV_OBJ_FLAG_HIDDEN);
