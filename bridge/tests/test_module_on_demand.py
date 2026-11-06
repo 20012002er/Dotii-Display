@@ -6,6 +6,7 @@ import unittest
 import json
 import plistlib
 import re
+import subprocess
 from pathlib import Path
 from unittest import mock
 
@@ -136,6 +137,58 @@ class ModuleOnDemandTests(unittest.TestCase):
         self.assertTrue(CUSTOM_DEFAULTS["enabled"])
         self.assertTrue(validate_custom_config(None)["enabled"])
         self.assertTrue(validate_custom_config({})["enabled"])
+
+    def _notion_custom_form(self, titles):
+        script = (BRIDGE / "web" / "app.js").read_text(encoding="utf-8")
+        driver = r'''
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+const todos = JSON.parse(process.argv[2]);
+const names = ["truncateUtf8", "notionCustomFields", "customFormValue"];
+const definitions = names.map((name) => {
+  const start = source.indexOf(`function ${name}(`);
+  if (start < 0) return "";
+  const next = source.indexOf("\nfunction ", start + 1);
+  return source.slice(start, next < 0 ? source.length : next);
+}).join("\n");
+const values = {
+  "custom-image-fit": "cover",
+  "custom-image-opacity": "70",
+};
+const byId = (id) => ({
+  checked: id === "custom-enabled" || id === "notion-enabled" || id.endsWith("-visible"),
+  value: values[id] || (id.endsWith("-color") ? "#F2C66D" : ""),
+});
+const state = {overview: {snapshot: {notion: {connected: true, todos}}}};
+const result = vm.runInNewContext(`${definitions}\ncustomFormValue()`, {byId, state, TextEncoder, Date});
+process.stdout.write(JSON.stringify(result));
+'''
+        completed = subprocess.run(
+            ["node", "-e", driver, str(BRIDGE / "web" / "app.js"), json.dumps([{"title": title} for title in titles])],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(completed.stdout)
+
+    def test_notion_todos_use_body_instead_of_overflowing_value(self):
+        titles = ["完成验收资料和报销资料的打印和整理", "在“大鳄吧”小程序的每日复盘贴中，加入视频版的复盘报告"]
+
+        result = self._notion_custom_form(titles)
+
+        self.assertEqual(result["value"], "2 项待办")
+        self.assertEqual(result["body"], "\n".join(f"• {title}" for title in titles))
+        self.assertLessEqual(len(result["value"].encode("utf-8")), 96)
+        self.assertLessEqual(len(result["body"].encode("utf-8")), 256)
+
+    def test_notion_todos_truncate_utf8_without_splitting_characters(self):
+        result = self._notion_custom_form(["🙂待办" * 100])
+
+        self.assertEqual(result["value"], "1 项待办")
+        self.assertLessEqual(len(result["body"].encode("utf-8")), 256)
+        self.assertTrue(result["body"].endswith("…"))
+        self.assertNotIn("\ufffd", result["body"])
 
     def test_frontend_overview_references_only_existing_status_elements(self):
         html = (BRIDGE / "web" / "index.html").read_text(encoding="utf-8")

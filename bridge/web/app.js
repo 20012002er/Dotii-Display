@@ -1395,6 +1395,31 @@ function renderBluetooth(bluetooth = {}) {
   byId("bluetooth-configure").textContent = running ? "正在连接…" : bleMode ? "绑定并开始推送" : "保存并连接";
 }
 
+function truncateUtf8(text, maximum) {
+  const encoder = new TextEncoder();
+  if (encoder.encode(text).length <= maximum) return text;
+  const ellipsis = "…";
+  const budget = maximum - encoder.encode(ellipsis).length;
+  let result = "";
+  let bytes = 0;
+  for (const character of text) {
+    const length = encoder.encode(character).length;
+    if (bytes + length > budget) break;
+    result += character;
+    bytes += length;
+  }
+  return result.trimEnd() + ellipsis;
+}
+
+function notionCustomFields(todos) {
+  return {
+    title: "Notion 待办",
+    value: `${todos.length} 项待办`,
+    body: truncateUtf8(todos.map((todo) => `• ${todo.title}`).join("\n"), 256),
+    footer: new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric" }),
+  };
+}
+
 function customFormValue() {
   const result = {
     enabled: byId("custom-enabled").checked,
@@ -1423,10 +1448,7 @@ function customFormValue() {
   const notionEnabled = byId("notion-enabled")?.checked;
   const notionData = state.overview?.snapshot?.notion;
   if (notionEnabled && notionData?.connected && Array.isArray(notionData.todos) && notionData.todos.length > 0) {
-    result.title = "Notion 待办";
-    result.value = notionData.todos.map((todo) => `• ${todo.title}`).join("\n").slice(0, 200);
-    result.body = "今日待办";
-    result.footer = new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
+    Object.assign(result, notionCustomFields(notionData.todos));
   }
   
   return result;

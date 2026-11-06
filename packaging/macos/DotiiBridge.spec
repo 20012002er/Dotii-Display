@@ -5,7 +5,7 @@ import json
 import shutil
 import tempfile
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_dynamic_libs, collect_all
 
 
 ROOT = Path.cwd().resolve()
@@ -68,12 +68,18 @@ for relative_name in firmware_files.values():
         raise SystemExit(f"Firmware image is missing: {relative_name}")
     datas.append((str(source), str(Path("firmware") / relative.parent)))
 
+objc_datas, objc_binaries, objc_hiddenimports = collect_all("objc")
+
 a = Analysis(
     [str(BRIDGE / "codex_bridge.py")],
     pathex=[str(BRIDGE)],
-    binaries=[],
-    datas=datas,
-    hiddenimports=[*collect_submodules("bleak"), *collect_submodules("esptool")],
+    binaries=[*objc_binaries],
+    datas=[*datas, *objc_datas],
+    hiddenimports=[
+        *collect_submodules("bleak"),
+        *collect_submodules("esptool"),
+        *objc_hiddenimports,
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

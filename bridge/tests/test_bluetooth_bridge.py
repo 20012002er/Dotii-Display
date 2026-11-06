@@ -106,6 +106,22 @@ class BluetoothPacketTests(unittest.TestCase):
 
 
 class MacOSBluetoothTests(unittest.IsolatedAsyncioTestCase):
+    def test_frozen_bridge_never_shadows_bundled_ble_dependencies(self):
+        """打包 App 只用内建蓝牙依赖，运行时旧 Python 版本的依赖不得遮蔽。"""
+        with tempfile.TemporaryDirectory() as folder:
+            dependency_path = str(Path(folder) / "bluetooth-deps")
+            sys.path = [entry for entry in sys.path if entry != dependency_path]
+            try:
+                with mock.patch("bluetooth_bridge.is_frozen", return_value=True):
+                    BluetoothBridge(Path(folder), platform_adapter=MacOSPlatformAdapter())
+                self.assertNotIn(dependency_path, sys.path)
+
+                with mock.patch("bluetooth_bridge.is_frozen", return_value=False):
+                    BluetoothBridge(Path(folder), platform_adapter=MacOSPlatformAdapter())
+                self.assertIn(dependency_path, sys.path)
+            finally:
+                sys.path = [entry for entry in sys.path if entry != dependency_path]
+
     async def test_discovery_keeps_corebluetooth_uuid_for_reconnect(self):
         identifier = "243E23AE-4A99-406C-B317-18F1BD7B4CBE"
         device = SimpleNamespace(address=identifier, name="Dotii")

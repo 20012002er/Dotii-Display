@@ -174,6 +174,11 @@ class BluetoothBridge:
         self._add_dependency_path()
 
     def _add_dependency_path(self) -> None:
+        # 打包应用只使用内建蓝牙依赖：运行时 bluetooth-deps 可能由其他
+        # Python 版本安装（如开发机上的 3.13），其 C 扩展与包内解释器
+        # 不兼容，若置顶 sys.path 会遮蔽内建依赖并导致 objc 导入失败。
+        if is_frozen():
+            return
         path = str(self.dependencies)
         if path not in sys.path:
             sys.path.insert(0, path)

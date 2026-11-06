@@ -260,8 +260,13 @@ static lv_color_t color(uint32_t hex)
 
 static uint32_t custom_ring_color(uint32_t start, uint32_t end, uint8_t segment)
 {
-    const uint32_t last_segment = CUSTOM_RING_SEGMENTS - 1U;
-    const uint32_t end_weight = ((uint32_t)segment * 255U + last_segment / 2U) / last_segment;
+    /* Match the Web preview: start at the top-left diagonal, reach the end
+       color at bottom-right, and mirror the fade on both semicircles. */
+    const uint32_t half_circle = CUSTOM_RING_SEGMENTS / 2U;
+    const uint32_t phase = ((uint32_t)segment + CUSTOM_RING_SEGMENTS * 3U / 8U) %
+                           CUSTOM_RING_SEGMENTS;
+    const uint32_t distance = phase <= half_circle ? phase : CUSTOM_RING_SEGMENTS - phase;
+    const uint32_t end_weight = (distance * 255U + half_circle / 2U) / half_circle;
     const uint32_t start_weight = 255U - end_weight;
     const uint32_t red = (((start >> 16) & 0xFFU) * start_weight +
                           ((end >> 16) & 0xFFU) * end_weight + 127U) / 255U;
