@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "answer_book.h"
 #include "app_state.h"
 #include "ble_bridge.h"
 #include "board_input.h"
@@ -43,7 +44,7 @@ LV_FONT_DECLARE(ui_font_fixed_20);
 #define COLOR_WARNING 0xF2C66D
 #define COLOR_VIOLET 0x9D7BFF
 #define COLOR_DANGER 0xFF766F
-#define PAGE_COUNT 6
+#define PAGE_COUNT 7
 #define TITLE_HEIGHT 30
 #define DISPLAY_ANGLE_DEFAULT_TENTHS 840
 #define DISPLAY_ANGLE_MIN_TENTHS 800
@@ -71,6 +72,7 @@ static lv_obj_t *s_bambu_detail;
 static lv_obj_t *s_zai_main;
 static lv_obj_t *s_claudecode_main;
 static lv_obj_t *s_custom;
+static lv_obj_t *s_answer_book;
 static lv_obj_t *s_dotii;
 static lv_obj_t *s_control;
 static lv_obj_t *s_settings;
@@ -501,6 +503,14 @@ static void detail_clicked(lv_event_t *event)
     load_screen(target, true);
 }
 
+static void answer_book_clicked(lv_event_t *event)
+{
+    (void)event;
+    if (!s_screen_on || s_screen_saver_active || s_wake_touch_in_progress) return;
+    if (s_last_gesture_at != 0 && lv_tick_elaps(s_last_gesture_at) < 350) return;
+    answer_book_activate();
+}
+
 static void swipe_event(lv_event_t *event)
 {
     if (lv_event_get_code(event) != LV_EVENT_GESTURE) return;
@@ -858,14 +868,14 @@ static void make_reset_metric(lv_obj_t *parent, int x)
 
 static bool page_enabled(uint8_t page)
 {
-    /* 无任何快照时只剩 Dotii 等待屏（等待真实数据），数据页不强制显示——
-       页面结构由快照 modules 驱动，等数据到了自然恢复。 */
-    if (!s_snapshot.valid) return page == 5;
+    /* 无快照时保留离线答案之书和 Dotii 等待屏；数据页由快照 modules 驱动。 */
+    if (!s_snapshot.valid) return page == 5 || page == 6;
     if (page == 0) return s_snapshot.codex_enabled;
     if (page == 1) return s_snapshot.bambu_enabled;
     if (page == 2) return s_snapshot.zai_enabled;
     if (page == 3) return s_snapshot.claudecode_enabled;
     if (page == 4) return s_snapshot.custom_enabled;
+    if (page == 5) return true;
     return s_snapshot.dotii_enabled;
 }
 
@@ -876,6 +886,7 @@ static lv_obj_t *page_screen(uint8_t page)
     if (page == 2) return s_zai_main;
     if (page == 3) return s_claudecode_main;
     if (page == 4) return s_custom;
+    if (page == 5) return s_answer_book;
     return s_dotii;
 }
 
@@ -894,7 +905,8 @@ static bool screen_enabled(lv_obj_t *screen)
     if (screen == s_zai_main) return page_enabled(2);
     if (screen == s_claudecode_main || screen == s_claudecode_detail) return page_enabled(3);
     if (screen == s_custom) return page_enabled(4);
-    if (screen == s_dotii) return page_enabled(5);
+    if (screen == s_answer_book) return page_enabled(5);
+    if (screen == s_dotii) return page_enabled(6);
     return true;
 }
 
@@ -906,7 +918,7 @@ static lv_obj_t *enabled_return_screen(lv_obj_t *screen)
 
 static void update_page_dots(void)
 {
-    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_CYAN};
+    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_WARNING, COLOR_CYAN};
     for (uint8_t row = 0; row < PAGE_COUNT; ++row) {
         int total_width = 0;
         uint8_t count = 0;
@@ -1962,6 +1974,15 @@ static void build_custom(void)
 
     /* The custom page is designed as a clean ambient canvas and intentionally
        does not show navigation dots. */
+}
+
+static void build_answer_book(void)
+{
+    s_answer_book = answer_book_build();
+    set_screen_background(s_answer_book);
+    add_activity_event(s_answer_book);
+    lv_obj_add_event_cb(s_answer_book, swipe_event, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(s_answer_book, answer_book_clicked, LV_EVENT_CLICKED, NULL);
 }
 
 static lv_obj_t *make_dotii_part(lv_obj_t *parent, int width, int height,
@@ -3150,6 +3171,7 @@ void state_ui_start(QueueHandle_t snapshot_queue)
     build_claudecode_confirm();
     build_claudecode_detail();
     build_custom();
+    build_answer_book();
     build_dotii();
     build_settings();
     build_control();
@@ -3214,6 +3236,10 @@ void state_ui_button_a_short(void)
     }
     if (s_current == s_settings) {
         load_screen(first_enabled_screen(), false);
+        return;
+    }
+    if (s_current == s_answer_book) {
+        answer_book_activate();
         return;
     }
     goto_page(1);
