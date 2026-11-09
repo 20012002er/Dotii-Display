@@ -9,7 +9,6 @@ idf_component_register(
         "state_ui.c"
         "answer_book.c"
         "generated/answer_book_data.c"
-        "generated/ui_font_answer_book_20.c"
         "generated/ui_font_detail_20.c"
         "generated/ui_font_fixed_20.c"
         "generated/ui_font_chinese_semibold_24.c"

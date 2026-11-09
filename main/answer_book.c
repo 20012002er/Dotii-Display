@@ -4,7 +4,8 @@
 
 #include "esp_random.h"
 
-LV_FONT_DECLARE(ui_font_answer_book_20);
+LV_FONT_DECLARE(ui_font_fixed_20);
+LV_FONT_DECLARE(ui_font_detail_20);
 
 #define COLOR_TEXT 0xF1F8F5
 #define COLOR_MUTED 0x8E9B97
@@ -15,6 +16,7 @@ static lv_obj_t *s_screen;
 static lv_obj_t *s_card;
 static lv_obj_t *s_answer;
 static lv_obj_t *s_hint;
+static lv_font_t s_answer_font;
 static size_t s_last_index = (size_t)-1;
 static size_t s_pending_index;
 static uint32_t s_shuffle_step;
@@ -24,7 +26,7 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *text, uint32_t text_co
 {
     lv_obj_t *label = lv_label_create(parent);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &ui_font_answer_book_20, 0);
+    lv_obj_set_style_text_font(label, &s_answer_font, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(text_color), 0);
     return label;
 }
@@ -104,6 +106,8 @@ static void screen_event(lv_event_t *event)
 
 lv_obj_t *answer_book_build(void)
 {
+    s_answer_font = ui_font_fixed_20;
+    s_answer_font.fallback = &ui_font_detail_20;
     s_screen = lv_obj_create(NULL);
     lv_obj_remove_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_screen, LV_OBJ_FLAG_CLICKABLE);
