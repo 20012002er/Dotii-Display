@@ -208,9 +208,9 @@ static void layout_gauge(performance_gauge_t *gauge, int32_t center_x,
     lv_obj_set_size(gauge->scale, size, size);
     lv_obj_center(gauge->scale);
 
-    bool compact = size <= 140;
-    lv_obj_set_style_line_width(gauge->needle, size >= 200 ? 5 : 3, 0);
-    int32_t hub_size = size >= 200 ? 16 : 11;
+    bool compact = size <= 160;
+    lv_obj_set_style_line_width(gauge->needle, size >= 300 ? 7 : size >= 200 ? 5 : 3, 0);
+    int32_t hub_size = size >= 300 ? 22 : size >= 200 ? 16 : 11;
     lv_obj_set_size(gauge->hub, hub_size, hub_size);
     lv_obj_center(gauge->hub);
 
@@ -266,19 +266,19 @@ static void apply_layout(const codex_snapshot_t *snapshot)
         if (mask & (1U << index)) slots[count++] = index;
     }
 
-    int32_t size = count == 1 ? 246 : count == 2 ? 170 : 140;
+    int32_t size = count == 1 ? SAFE_SIZE : count == 2 ? 176 : 158;
     for (uint8_t slot = 0; slot < count; ++slot) {
         int32_t center_x;
         int32_t center_y;
         if (count == 1) {
             center_x = SAFE_SIZE / 2;
-            center_y = 181;
+            center_y = SAFE_SIZE / 2;
         } else if (count == 2) {
-            center_x = slot == 0 ? 92 : 266;
-            center_y = 184;
+            center_x = slot == 0 ? 90 : 268;
+            center_y = SAFE_SIZE / 2;
         } else {
-            center_x = count == 3 && slot == 2 ? SAFE_SIZE / 2 : (slot % 2 == 0 ? 91 : 267);
-            center_y = slot < 2 ? 96 : 240;
+            center_x = count == 3 && slot == 2 ? SAFE_SIZE / 2 : (slot % 2 == 0 ? 90 : 268);
+            center_y = slot < 2 ? 82 : 242;
         }
         performance_gauge_t *gauge = &s_gauges[slots[slot]];
         layout_gauge(gauge, center_x, center_y, size);
@@ -369,8 +369,6 @@ lv_obj_t *performance_monitor_build(void)
     lv_obj_center(s_safe);
     lv_obj_remove_flag(s_safe, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *title = make_label(s_safe, "性能监控", &s_ui_font, COLOR_TEXT);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
     s_empty = make_label(s_safe, "未选择指标", &s_ui_font, COLOR_MUTED);
     lv_obj_align(s_empty, LV_ALIGN_CENTER, 0, 0);
 
