@@ -34,6 +34,7 @@ from codex_app_server import probe_app_server, run_collector
 from bambu_client import BambuConfigStore, BambuService
 from zai_client import ZaiConfigStore, ZaiService
 from notion_client import NotionConfigStore, NotionService
+from weather_client import WeatherConfigStore, WeatherService
 from claudecode_client import (
     PERMISSION_WAIT_SECONDS,
     ClaudeCodeMonitor,
@@ -89,7 +90,7 @@ CUSTOM_DEFAULTS = {
     "ring_start": "#F2C66D",
     "ring_end": "#5DA9FF",
 }
-MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True}
+MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True, "weather": False}
 
 
 def resolve_ffmpeg(runtime_folder: Path) -> str | None:
@@ -1288,6 +1289,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "bambu_config": self.bridge.bambu_config.public(),
             "zai_config": self.bridge.zai_config.public(),
             "notion_config": self.bridge.notion_config.public(),
+            "weather_config": self.bridge.weather_config.public(),
             "bluetooth": self.bridge.bluetooth.snapshot(),
             "ble_link": self.bridge.ble_link.snapshot(),
             "firmware": self.bridge.firmware.snapshot(),
@@ -1299,6 +1301,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 {"id": "claudecode", "name": "Claude Code", "enabled": snapshot["modules"]["claudecode"], "available": True, "locked": False},
                 {"id": "custom", "name": "自定义", "enabled": snapshot["custom"]["enabled"], "available": True, "locked": False},
                 {"id": "dotii", "name": "Dotii", "enabled": snapshot["modules"]["dotii"], "available": True, "locked": False},
+                {"id": "weather", "name": "窗外小世界", "enabled": snapshot["modules"].get("weather", False), "available": True, "locked": False},
             ],
         }
 
@@ -1468,6 +1471,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 config = self.bridge.zai_config.write(self._read_admin_action(), preserve_secret=True)
                 self.bridge.zai.reconfigure()
                 self._send_json(HTTPStatus.OK, {"ok": True, "zai_config": config})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        if path == "/api/v1/admin/weather/config":
+            if self._deny_nonlocal():
+                return
+            try:
+                config = self.bridge.weather_config.write(self._read_admin_action(), preserve_secret=True)
+                self.bridge.weather.reconfigure()
+                self._send_json(HTTPStatus.OK, {"ok": True, "weather_config": config})
             except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
@@ -1717,6 +1730,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     self.bridge.notion.set_enabled(enabled)
                 elif module_id == "claudecode":
                     self.bridge.claudecode.set_enabled(enabled)
+                elif module_id == "weather":
+                    self.bridge.weather.set_enabled(enabled)
                 self._send_json(HTTPStatus.OK, {"ok": True, "modules": saved})
             except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -1798,6 +1813,8 @@ class BridgeServer(ThreadingHTTPServer):
         zai_check: CodexCheckStore,
         notion_config: NotionConfigStore,
         notion: NotionService,
+        weather_config: WeatherConfigStore,
+        weather: WeatherService,
         claudecode: ClaudeCodeMonitor,
         claudecode_permission: PermissionBroker,
         claudecode_config: ClaudeCodeConfigStore,
@@ -1827,6 +1844,8 @@ class BridgeServer(ThreadingHTTPServer):
         self.zai_check = zai_check
         self.notion_config = notion_config
         self.notion = notion
+        self.weather_config = weather_config
+        self.weather = weather
         self.claudecode = claudecode
         self.claudecode_permission = claudecode_permission
         self.claudecode_config = claudecode_config
@@ -1849,6 +1868,7 @@ class BridgeServer(ThreadingHTTPServer):
         snapshot["bambu"] = self.bambu.snapshot()
         snapshot["zai"] = self.zai.snapshot()
         snapshot["notion"] = self.notion.snapshot()
+        snapshot["weather"] = self.weather.snapshot()
         snapshot["claudecode"] = self.claudecode.snapshot(self.modules.read()["claudecode"])
         snapshot["claudecode"]["permission"] = self.claudecode_permission.snapshot()
         modules = self.modules.read()
@@ -1917,6 +1937,12 @@ def main() -> None:
         lambda: modules.read().get("notion", False),
     )
     notion.start()
+    weather_config = WeatherConfigStore(writable_root / "weather.json")
+    weather = WeatherService(
+        weather_config,
+        lambda: modules.read().get("weather", False),
+    )
+    weather.start()
     claudecode = ClaudeCodeMonitor()
     claudecode_permission = PermissionBroker(
         module_enabled=lambda: modules.read()["claudecode"])
@@ -1943,6 +1969,7 @@ def main() -> None:
     server = BridgeServer((arguments.host, arguments.port), store, token, runtime, collector_restart,
                           custom, modules, dotii, display, codex_check, assets, bambu_config, bambu,
                           zai_config, zai, zai_check, notion_config, notion,
+                          weather_config, weather,
                           claudecode, claudecode_permission,
                           claudecode_config,
                           bluetooth, ble_link, firmware, writable_root, application_root(),
@@ -1987,6 +2014,7 @@ def main() -> None:
         bambu.stop()
         zai.stop()
         notion.stop()
+        weather.stop()
         bluetooth.stop()
         firmware.stop()
         server.server_close()

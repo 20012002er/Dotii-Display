@@ -20,6 +20,7 @@
 #include "nvs.h"
 #include "sdkconfig.h"
 #include "ui_icons.h"
+#include "window_world.h"
 
 LV_FONT_DECLARE(ui_font_chinese_semibold_24);
 LV_FONT_DECLARE(ui_font_bambu_semibold_24);
@@ -44,7 +45,7 @@ LV_FONT_DECLARE(ui_font_fixed_20);
 #define COLOR_WARNING 0xF2C66D
 #define COLOR_VIOLET 0x9D7BFF
 #define COLOR_DANGER 0xFF766F
-#define PAGE_COUNT 7
+#define PAGE_COUNT 8
 #define TITLE_HEIGHT 30
 #define DISPLAY_ANGLE_DEFAULT_TENTHS 840
 #define DISPLAY_ANGLE_MIN_TENTHS 800
@@ -72,6 +73,7 @@ static lv_obj_t *s_bambu_detail;
 static lv_obj_t *s_zai_main;
 static lv_obj_t *s_claudecode_main;
 static lv_obj_t *s_custom;
+static lv_obj_t *s_window_world;
 static lv_obj_t *s_answer_book;
 static lv_obj_t *s_dotii;
 static lv_obj_t *s_control;
@@ -868,14 +870,15 @@ static void make_reset_metric(lv_obj_t *parent, int x)
 
 static bool page_enabled(uint8_t page)
 {
-    /* 无快照时保留离线答案之书和 Dotii 等待屏；数据页由快照 modules 驱动。 */
-    if (!s_snapshot.valid) return page == 5 || page == 6;
+    /* 无快照时保留离线窗外小世界、答案之书和 Dotii 等待屏；数据页由快照 modules 驱动。 */
+    if (!s_snapshot.valid) return page == 5 || page == 6 || page == 7;
     if (page == 0) return s_snapshot.codex_enabled;
     if (page == 1) return s_snapshot.bambu_enabled;
     if (page == 2) return s_snapshot.zai_enabled;
     if (page == 3) return s_snapshot.claudecode_enabled;
     if (page == 4) return s_snapshot.custom_enabled;
-    if (page == 5) return true;
+    if (page == 5) return s_snapshot.weather_enabled;
+    if (page == 6) return true;
     return s_snapshot.dotii_enabled;
 }
 
@@ -886,7 +889,8 @@ static lv_obj_t *page_screen(uint8_t page)
     if (page == 2) return s_zai_main;
     if (page == 3) return s_claudecode_main;
     if (page == 4) return s_custom;
-    if (page == 5) return s_answer_book;
+    if (page == 5) return s_window_world;
+    if (page == 6) return s_answer_book;
     return s_dotii;
 }
 
@@ -905,8 +909,9 @@ static bool screen_enabled(lv_obj_t *screen)
     if (screen == s_zai_main) return page_enabled(2);
     if (screen == s_claudecode_main || screen == s_claudecode_detail) return page_enabled(3);
     if (screen == s_custom) return page_enabled(4);
-    if (screen == s_answer_book) return page_enabled(5);
-    if (screen == s_dotii) return page_enabled(6);
+    if (screen == s_window_world) return page_enabled(5);
+    if (screen == s_answer_book) return page_enabled(6);
+    if (screen == s_dotii) return page_enabled(7);
     return true;
 }
 
@@ -918,7 +923,7 @@ static lv_obj_t *enabled_return_screen(lv_obj_t *screen)
 
 static void update_page_dots(void)
 {
-    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_WARNING, COLOR_CYAN};
+    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_CYAN, COLOR_WARNING, COLOR_CYAN};
     for (uint8_t row = 0; row < PAGE_COUNT; ++row) {
         int total_width = 0;
         uint8_t count = 0;
@@ -1985,6 +1990,13 @@ static void build_answer_book(void)
     lv_obj_add_event_cb(s_answer_book, answer_book_clicked, LV_EVENT_CLICKED, NULL);
 }
 
+static void build_window_world(void)
+{
+    s_window_world = window_world_build();
+    add_activity_event(s_window_world);
+    lv_obj_add_event_cb(s_window_world, swipe_event, LV_EVENT_GESTURE, NULL);
+}
+
 static lv_obj_t *make_dotii_part(lv_obj_t *parent, int width, int height,
                                  int x, int y, uint32_t part_color)
 {
@@ -2652,6 +2664,7 @@ static void update_snapshot(const codex_snapshot_t *snapshot)
         s_dotii_state_started = lv_tick_get();
     }
     s_snapshot = *snapshot;
+    window_world_apply(snapshot);
     if (snapshot->docked_rotation_tenths >= DISPLAY_ANGLE_MIN_TENTHS &&
         snapshot->docked_rotation_tenths <= DISPLAY_ANGLE_MAX_TENTHS &&
         (snapshot->docked_rotation_tenths != s_display_angle_tenths ||
@@ -3171,6 +3184,7 @@ void state_ui_start(QueueHandle_t snapshot_queue)
     build_claudecode_confirm();
     build_claudecode_detail();
     build_custom();
+    build_window_world();
     build_answer_book();
     build_dotii();
     build_settings();

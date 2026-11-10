@@ -59,6 +59,11 @@
         <span>Dotii</span>
         <span class="module-meta" id="dotii-nav-state">读取中</span>
       </button>
+      <button class="module-tab" type="button" data-panel="weather" aria-selected="false">
+        <span class="nav-icon weather-icon" aria-hidden="true"></span>
+        <span>窗外小世界</span>
+        <span class="module-meta" id="weather-nav-state">读取中</span>
+      </button>
       <button class="module-tab system-tab" type="button" data-panel="system" aria-selected="false">
         <span class="nav-icon settings-icon" aria-hidden="true"></span>
         <span>设置</span>
@@ -649,6 +654,45 @@
               <span class="switch-track" aria-hidden="true"></span>
             </label>
           </div>
+        </section>
+      </section>
+
+      <section class="panel" id="panel-weather" aria-labelledby="weather-heading" hidden>
+        <div class="section-heading">
+          <div>
+            <h2 id="weather-heading">窗外小世界</h2>
+            <p>圆屏变成一扇窗：真实时间对应日出日落，天气对应雨雪云雾。</p>
+          </div>
+        </div>
+        <div class="module-content" id="weather-content">
+          <div class="metric-grid" aria-label="天气概览">
+            <article class="metric primary-metric"><span>连接状态</span><strong id="weather-status">未启用</strong></article>
+            <article class="metric"><span>城市</span><strong id="weather-city">--</strong></article>
+            <article class="metric"><span>天气</span><strong id="weather-text">--</strong></article>
+            <article class="metric"><span>气温</span><strong id="weather-temperature">--</strong></article>
+            <article class="metric"><span>湿度</span><strong id="weather-humidity">--</strong></article>
+            <article class="metric"><span>最近更新</span><strong id="weather-updated">--</strong></article>
+          </div>
+          <p class="network-note"><strong>离线可用</strong><span>天气数据由管理中心通过高德接口采集并下发；设备离线时窗外小世界仍保留本地昼夜变化。</span></p>
+        </div>
+        <section class="module-preferences" aria-labelledby="weather-preferences-heading">
+          <div class="module-preferences-heading">
+            <div><h3 id="weather-preferences-heading">天气设置</h3><p>使用高德开放平台的 API Key 读取实况天气，Key 只保存在本机。</p></div>
+            <label class="module-switch">
+              <span>启用功能</span>
+              <input id="weather-enabled" type="checkbox">
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+            </label>
+          </div>
+          <form class="bambu-card module-preference-card" id="weather-form">
+            <div class="card-heading"><div><h3>高德天气账户</h3><p>在高德开放平台的“应用管理”中创建 Web 服务类型的 Key 后填入。</p></div><span class="status-pill" id="weather-connection">尚未配置</span></div>
+            <div class="bambu-fields settings-bambu-fields">
+              <label><span>API Key</span><input id="weather-api-key" type="password" maxlength="200" autocomplete="new-password" placeholder="请输入高德 API Key"></label>
+              <label><span>查询城市</span><input id="weather-city-input" type="text" maxlength="60" placeholder="城市名称或 adcode，如 杭州 或 330100"></label>
+            </div>
+            <p class="network-note"><strong>按需取天气</strong><span>每 10 分钟查询一次实况天气；启用前 Dotii 不会连接高德服务。</span></p>
+            <div class="form-actions"><button class="primary-button" type="submit">保存</button></div>
+          </form>
         </section>
       </section>
 

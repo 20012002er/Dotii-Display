@@ -54,6 +54,17 @@ typedef enum {
     DISPLAY_SCREEN_OFF_PAGE_DOTII,
 } display_screen_off_page_t;
 
+/* 窗外小世界的天气类别：由后台高德天气文字归一，设备本地绘制。 */
+typedef enum {
+    WINDOW_WEATHER_CLEAR = 0,
+    WINDOW_WEATHER_CLOUDY,
+    WINDOW_WEATHER_OVERCAST,
+    WINDOW_WEATHER_RAIN,
+    WINDOW_WEATHER_THUNDER,
+    WINDOW_WEATHER_SNOW,
+    WINDOW_WEATHER_FOG,
+} window_weather_t;
+
 #define CODEX_TASK_DETAIL_MAX 6
 #define CLAUDECODE_SESSION_MAX 4
 
@@ -185,6 +196,14 @@ typedef struct {
     char custom_value[97];
     char custom_body[257];
     char custom_footer[97];
+    bool weather_enabled;
+    bool weather_valid;
+    bool weather_temperature_available;
+    window_weather_t weather_condition;
+    int weather_temperature;
+    char weather_text[32];
+    char weather_city[32];
+    time_t weather_updated_at;
     time_t task_updated_at;
     time_t generated_at;
 } codex_snapshot_t;

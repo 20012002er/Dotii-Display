@@ -187,6 +187,11 @@ h1 { font-size: 17px; line-height: 1.2; letter-spacing: -.01em; }
   -webkit-mask-image: url("/assets/custom.svg");
   mask-image: url("/assets/custom.svg");
 }
+.weather-icon {
+  color: var(--cyan, #20D6E6);
+  -webkit-mask-image: url("/assets/weather.svg");
+  mask-image: url("/assets/weather.svg");
+}
 .module-meta { color: var(--muted); font-size: 11px; }
 .system-tab { margin-left: auto; }
 

@@ -475,6 +475,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
        hidden until the field explicitly enables it. */
     snapshot->zai_enabled = false;
     snapshot->claudecode_enabled = false;
+    snapshot->weather_enabled = false;
     cJSON *modules = cJSON_GetObjectItemCaseSensitive(root, "modules");
     if (!cJSON_IsObject(modules)) return;
 
@@ -483,11 +484,51 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     cJSON *dotii = cJSON_GetObjectItemCaseSensitive(modules, "dotii");
     cJSON *zai = cJSON_GetObjectItemCaseSensitive(modules, "zai");
     cJSON *claudecode = cJSON_GetObjectItemCaseSensitive(modules, "claudecode");
+    cJSON *weather = cJSON_GetObjectItemCaseSensitive(modules, "weather");
     if (cJSON_IsBool(codex)) snapshot->codex_enabled = cJSON_IsTrue(codex);
     if (cJSON_IsBool(bambu)) snapshot->bambu_enabled = cJSON_IsTrue(bambu);
     if (cJSON_IsBool(dotii)) snapshot->dotii_enabled = cJSON_IsTrue(dotii);
     if (cJSON_IsBool(zai)) snapshot->zai_enabled = cJSON_IsTrue(zai);
     if (cJSON_IsBool(claudecode)) snapshot->claudecode_enabled = cJSON_IsTrue(claudecode);
+    if (cJSON_IsBool(weather)) snapshot->weather_enabled = cJSON_IsTrue(weather);
+}
+
+static window_weather_t weather_condition_from_string(const char *condition)
+{
+    if (condition == NULL) return WINDOW_WEATHER_CLEAR;
+    if (strcmp(condition, "cloudy") == 0) return WINDOW_WEATHER_CLOUDY;
+    if (strcmp(condition, "overcast") == 0) return WINDOW_WEATHER_OVERCAST;
+    if (strcmp(condition, "rain") == 0) return WINDOW_WEATHER_RAIN;
+    if (strcmp(condition, "thunder") == 0) return WINDOW_WEATHER_THUNDER;
+    if (strcmp(condition, "snow") == 0) return WINDOW_WEATHER_SNOW;
+    if (strcmp(condition, "fog") == 0) return WINDOW_WEATHER_FOG;
+    return WINDOW_WEATHER_CLEAR;
+}
+
+static void copy_weather_status(cJSON *root, codex_snapshot_t *snapshot)
+{
+    snapshot->weather_valid = false;
+    snapshot->weather_temperature_available = false;
+    snapshot->weather_condition = WINDOW_WEATHER_CLEAR;
+    snapshot->weather_temperature = 0;
+    snapshot->weather_text[0] = '\0';
+    snapshot->weather_city[0] = '\0';
+    snapshot->weather_updated_at = 0;
+    cJSON *weather = cJSON_GetObjectItemCaseSensitive(root, "weather");
+    if (!cJSON_IsObject(weather)) return;
+
+    snapshot->weather_valid = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(weather, "connected"));
+    copy_json_string(weather, "weather_text", snapshot->weather_text, sizeof(snapshot->weather_text));
+    copy_json_string(weather, "city", snapshot->weather_city, sizeof(snapshot->weather_city));
+    cJSON *condition = cJSON_GetObjectItemCaseSensitive(weather, "condition");
+    snapshot->weather_condition = weather_condition_from_string(
+        cJSON_IsString(condition) ? condition->valuestring : NULL);
+    snapshot->weather_temperature_available = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(weather, "temperature_available"));
+    cJSON *temperature = cJSON_GetObjectItemCaseSensitive(weather, "temperature");
+    if (cJSON_IsNumber(temperature)) snapshot->weather_temperature = temperature->valueint;
+    cJSON *updated = cJSON_GetObjectItemCaseSensitive(weather, "updated_at_epoch");
+    if (cJSON_IsNumber(updated)) snapshot->weather_updated_at = (time_t)updated->valuedouble;
 }
 
 static uint32_t dotii_state_token_from_string(const char *value)
@@ -884,6 +925,7 @@ static bool parse_snapshot(const char *json, codex_snapshot_t *snapshot)
     copy_bambu_status(root, snapshot);
     copy_zai_status(root, snapshot);
     copy_claudecode_status(root, snapshot);
+    copy_weather_status(root, snapshot);
     copy_dotii_state(root, snapshot);
     ok = true;
 

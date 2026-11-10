@@ -23,6 +23,7 @@ const state = {
   moduleSaving: {},
   bambuLoaded: false,
   zaiLoaded: false,
+  weatherLoaded: false,
   zaiChecking: false,
   zaiCheck: null,
   notionLoaded: false,
@@ -1159,6 +1160,53 @@ async function saveZai(event) {
   } catch (error) { showToast(error.message); }
 }
 
+const WEATHER_STATE_TEXT = {
+  disabled: "已关闭",
+  needs_configuration: "等待配置",
+  online: "已连接",
+  error: "连接异常",
+  connecting: "连接中",
+};
+
+function renderWeather(weather = {}, config = {}, enabled = true) {
+  if (!state.weatherLoaded) {
+    byId("weather-api-key").placeholder = config.has_api_key ? "已保存，留空表示不修改" : "请输入高德 API Key";
+    byId("weather-city-input").value = config.city || "";
+    state.weatherLoaded = true;
+  }
+  const configured = Boolean(weather.configured || config.configured);
+  const connected = Boolean(weather.connected);
+  const connection = byId("weather-connection");
+  connection.dataset.state = connected ? "online" : configured ? (weather.service_state === "error" ? "error" : "waiting") : "offline";
+  connection.textContent = connected ? "已连接" : configured ? (WEATHER_STATE_TEXT[weather.service_state] || "正在连接") : "尚未配置";
+  const available = enabled && connected;
+  setText("weather-city", available && weather.city ? weather.city : (config.city || "--"));
+  setText("weather-text", available && weather.weather_text ? weather.weather_text : "--");
+  setText("weather-temperature", available && weather.temperature_available ? `${weather.temperature}°C` : "--");
+  setText("weather-humidity", available && weather.weather_text ? `${weather.humidity}%` : "--");
+  setText("weather-updated", weather.updated_at_epoch ? formatTime(weather.updated_at_epoch) : "--");
+  setText("weather-status", !enabled ? "未启用" : WEATHER_STATE_TEXT[weather.service_state] || "等待连接");
+  setText("weather-nav-state", !enabled ? "已关闭" : connected ? "在线" : configured ? "连接中" : "待配置");
+  byId("weather-content").hidden = !enabled;
+}
+
+async function saveWeather(event) {
+  event.preventDefault();
+  const payload = {
+    api_key: byId("weather-api-key").value,
+    city: byId("weather-city-input").value.trim(),
+  };
+  try {
+    const response = await fetch("/api/v1/admin/weather/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    byId("weather-api-key").value = "";
+    byId("weather-api-key").placeholder = "已保存，留空表示不修改";
+    showToast("天气配置已保存");
+    await refreshOverview();
+  } catch (error) { showToast(error.message); }
+}
+
 function setBridgeState(bridge) {
   const indicator = byId("bridge-state");
   const bridgeOnline = bridge.online !== false;
@@ -1662,6 +1710,7 @@ function renderOverview(overview) {
   const zaiEnabled = modules.zai?.enabled !== false;
   const claudecodeEnabled = modules.claudecode?.enabled !== false;
   const dotiiEnabled = modules.dotii?.enabled !== false;
+  const weatherEnabled = modules.weather?.enabled === true;
   const weeklyAvailable = codex.weekly_available !== false;
   const weekly = weeklyAvailable ? Math.max(0, Math.min(100, Number(codex.weekly_remaining_percent) || 0)) : 0;
   const fiveHourAvailable = codex.five_hour_available === true;
@@ -1691,6 +1740,7 @@ function renderOverview(overview) {
   if (!state.moduleSaving.bambu) byId("bambu-enabled").checked = bambuEnabled;
   if (!state.moduleSaving.zai) byId("zai-enabled").checked = zaiEnabled;
   if (!state.moduleSaving.claudecode) byId("claudecode-enabled").checked = claudecodeEnabled;
+  if (!state.moduleSaving.weather) byId("weather-enabled").checked = weatherEnabled;
   byId("codex-content").hidden = !codexEnabled;
   renderCodexCheck(state.codexCheck, codexEnabled, bridge);
   byId("bambu-content").hidden = !bambuEnabled;
@@ -1702,6 +1752,7 @@ function renderOverview(overview) {
   renderZaiCheck(state.zaiCheck, zaiEnabled);
   renderNotion(snapshot.notion || {}, overview.notion_config || {}, overview.notion_config?.enabled !== false);
   renderNotionCheck(state.notionCheck, overview.notion_config?.enabled !== false);
+  renderWeather(snapshot.weather || {}, overview.weather_config || {}, weatherEnabled);
   renderClaudecode(snapshot.claudecode || {}, claudecodeEnabled);
   const incomingDotiiConfig = overview.dotii_config;
   if (!state.dotiiConfigDirty && !state.dotiiConfigSaving && incomingDotiiConfig
@@ -2388,6 +2439,8 @@ byId("bambu-enabled").addEventListener("change", (event) => updateModule("bambu"
 byId("zai-enabled").addEventListener("change", (event) => updateModule("zai", event.target.checked));
 byId("zai-form").addEventListener("submit", saveZai);
 byId("zai-check").addEventListener("click", checkZai);
+byId("weather-enabled").addEventListener("change", (event) => updateModule("weather", event.target.checked));
+byId("weather-form").addEventListener("submit", saveWeather);
 byId("notion-form").addEventListener("submit", saveNotion);
 byId("notion-check").addEventListener("click", checkNotion);
 byId("claudecode-enabled").addEventListener("change", (event) => updateModule("claudecode", event.target.checked));
