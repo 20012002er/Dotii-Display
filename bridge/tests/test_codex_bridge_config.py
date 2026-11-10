@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from http import HTTPStatus
 from pathlib import Path
 from unittest import mock
 
@@ -11,7 +12,10 @@ BRIDGE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BRIDGE))
 
 from codex_bridge import (  # noqa: E402
+    BridgeHandler,
+    BridgeServer,
     CODEX_CLI_PACKAGE,
+    MODULE_DEFAULTS,
     ClaudeCodeConfigStore,
     default_claudecode_config,
     default_dotii_config,
@@ -77,7 +81,7 @@ class CodexUiConfigTests(unittest.TestCase):
 
     def test_module_config_migrates_dotii_as_enabled(self) -> None:
         modules = validate_module_config({"codex": True, "bambu": False})
-        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True, "weather": False})
+        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True, "weather": False, "performance": False})
 
     def test_dotii_state_prioritizes_failure_then_active_work(self) -> None:
         failed = dotii_state(
@@ -417,6 +421,58 @@ class CodexUiConfigTests(unittest.TestCase):
         self.assertTrue(snapshot["codex"]["five_hour_available"])
         self.assertEqual(snapshot["codex"]["five_hour_remaining_percent"], 68)
         self.assertEqual(snapshot["codex"]["five_hour_reset_date"], "08-26 22:40")
+
+    def test_snapshot_always_aggregates_performance_when_device_page_is_off(self) -> None:
+        bridge = object.__new__(BridgeServer)
+        bridge.store = mock.Mock()
+        bridge.store.read.return_value = {}
+        bridge.custom = mock.Mock()
+        bridge.custom.read.return_value = {"enabled": False}
+        bridge.assets = mock.Mock()
+        bridge.assets.source_info.return_value = {}
+        bridge.assets.render_info.return_value = {}
+        for name in ("bambu", "zai", "notion", "weather", "claudecode", "claudecode_permission"):
+            service = mock.Mock()
+            service.snapshot.return_value = {}
+            setattr(bridge, name, service)
+        performance = {"connected": True, "cpu": {"available": True, "percent": 42.0}}
+        bridge.performance = mock.Mock()
+        bridge.performance.snapshot.return_value = performance
+        bridge.modules = mock.Mock()
+        bridge.modules.read.return_value = dict(MODULE_DEFAULTS)
+        bridge.dotii = mock.Mock()
+        bridge.dotii.read.return_value = default_dotii_config()
+        bridge.display = mock.Mock()
+        bridge.display.read.return_value = {}
+
+        with mock.patch("codex_bridge.dotii_state", return_value={}):
+            snapshot = BridgeServer.snapshot(bridge)
+
+        self.assertFalse(snapshot["modules"]["performance"])
+        self.assertEqual(snapshot["performance"], performance)
+        bridge.performance.snapshot.assert_called_once_with()
+
+    def test_performance_config_route_validates_and_saves_all_switches(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/admin/performance/config"
+        handler.server = mock.Mock()
+        handler._deny_nonlocal = mock.Mock(return_value=False)
+        payload = {
+            "cpu_enabled": True,
+            "memory_enabled": False,
+            "disk_enabled": True,
+            "network_enabled": False,
+        }
+        handler._read_admin_action = mock.Mock(return_value=payload)
+        handler._send_json = mock.Mock()
+        handler.server.performance_config.write.return_value = payload
+
+        BridgeHandler.do_POST(handler)
+
+        handler.server.performance_config.write.assert_called_once_with(payload)
+        status, body = handler._send_json.call_args.args
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(body, {"ok": True, "performance_config": payload})
 
     def test_snapshot_keeps_complete_codex_detail_text(self) -> None:
         long_text = "完整回复" * 2000

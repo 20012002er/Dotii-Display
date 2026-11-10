@@ -9,6 +9,7 @@ idf_component_register(
         "state_ui.c"
         "answer_book.c"
         "window_world.c"
+        "performance_monitor.c"
         "generated/answer_book_data.c"
         "generated/ui_font_detail_20.c"
         "generated/ui_font_fixed_20.c"

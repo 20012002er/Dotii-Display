@@ -35,6 +35,7 @@ from bambu_client import BambuConfigStore, BambuService
 from zai_client import ZaiConfigStore, ZaiService
 from notion_client import NotionConfigStore, NotionService
 from weather_client import WeatherConfigStore, WeatherService
+from performance_client import PerformanceConfigStore, PerformanceService
 from claudecode_client import (
     PERMISSION_WAIT_SECONDS,
     ClaudeCodeMonitor,
@@ -90,7 +91,7 @@ CUSTOM_DEFAULTS = {
     "ring_start": "#F2C66D",
     "ring_end": "#5DA9FF",
 }
-MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True, "weather": False}
+MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True, "weather": False, "performance": False}
 
 
 def resolve_ffmpeg(runtime_folder: Path) -> str | None:
@@ -1290,6 +1291,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "zai_config": self.bridge.zai_config.public(),
             "notion_config": self.bridge.notion_config.public(),
             "weather_config": self.bridge.weather_config.public(),
+            "performance_config": self.bridge.performance_config.read(),
             "bluetooth": self.bridge.bluetooth.snapshot(),
             "ble_link": self.bridge.ble_link.snapshot(),
             "firmware": self.bridge.firmware.snapshot(),
@@ -1302,6 +1304,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 {"id": "custom", "name": "自定义", "enabled": snapshot["custom"]["enabled"], "available": True, "locked": False},
                 {"id": "dotii", "name": "Dotii", "enabled": snapshot["modules"]["dotii"], "available": True, "locked": False},
                 {"id": "weather", "name": "窗外小世界", "enabled": snapshot["modules"].get("weather", False), "available": True, "locked": False},
+                {"id": "performance", "name": "性能监控", "enabled": snapshot["modules"].get("performance", False), "available": True, "locked": False},
             ],
         }
 
@@ -1703,6 +1706,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
+        if path == "/api/v1/admin/performance/config":
+            if self._deny_nonlocal():
+                return
+            try:
+                payload = self._read_admin_action()
+                config = self.bridge.performance_config.write(payload)
+                self._send_json(HTTPStatus.OK, {"ok": True, "performance_config": config})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
         if path == "/api/v1/admin/modules":
             if self._deny_nonlocal():
                 return
@@ -1711,7 +1724,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 module_id = payload.get("id")
                 enabled = payload.get("enabled")
                 if module_id not in MODULE_DEFAULTS or not isinstance(enabled, bool):
-                    raise ValueError("id must be codex, bambu, zai, notion, claudecode or dotii and enabled must be boolean")
+                    raise ValueError("id must be codex, bambu, zai, notion, claudecode, dotii, weather or performance and enabled must be boolean")
                 modules = self.bridge.modules.read()
                 candidate = {**modules, module_id: enabled}
                 if not any(candidate.values()) and not self.bridge.custom.read()["enabled"]:
@@ -1815,6 +1828,8 @@ class BridgeServer(ThreadingHTTPServer):
         notion: NotionService,
         weather_config: WeatherConfigStore,
         weather: WeatherService,
+        performance_config: PerformanceConfigStore,
+        performance: PerformanceService,
         claudecode: ClaudeCodeMonitor,
         claudecode_permission: PermissionBroker,
         claudecode_config: ClaudeCodeConfigStore,
@@ -1846,6 +1861,8 @@ class BridgeServer(ThreadingHTTPServer):
         self.notion = notion
         self.weather_config = weather_config
         self.weather = weather
+        self.performance_config = performance_config
+        self.performance = performance
         self.claudecode = claudecode
         self.claudecode_permission = claudecode_permission
         self.claudecode_config = claudecode_config
@@ -1869,6 +1886,7 @@ class BridgeServer(ThreadingHTTPServer):
         snapshot["zai"] = self.zai.snapshot()
         snapshot["notion"] = self.notion.snapshot()
         snapshot["weather"] = self.weather.snapshot()
+        snapshot["performance"] = self.performance.snapshot()
         snapshot["claudecode"] = self.claudecode.snapshot(self.modules.read()["claudecode"])
         snapshot["claudecode"]["permission"] = self.claudecode_permission.snapshot()
         modules = self.modules.read()
@@ -1943,6 +1961,9 @@ def main() -> None:
         lambda: modules.read().get("weather", False),
     )
     weather.start()
+    performance_config = PerformanceConfigStore(writable_root / "performance.json")
+    performance = PerformanceService(performance_config)
+    performance.start()
     claudecode = ClaudeCodeMonitor()
     claudecode_permission = PermissionBroker(
         module_enabled=lambda: modules.read()["claudecode"])
@@ -1969,7 +1990,7 @@ def main() -> None:
     server = BridgeServer((arguments.host, arguments.port), store, token, runtime, collector_restart,
                           custom, modules, dotii, display, codex_check, assets, bambu_config, bambu,
                           zai_config, zai, zai_check, notion_config, notion,
-                          weather_config, weather,
+                          weather_config, weather, performance_config, performance,
                           claudecode, claudecode_permission,
                           claudecode_config,
                           bluetooth, ble_link, firmware, writable_root, application_root(),
@@ -2015,6 +2036,7 @@ def main() -> None:
         zai.stop()
         notion.stop()
         weather.stop()
+        performance.stop()
         bluetooth.stop()
         firmware.stop()
         server.server_close()

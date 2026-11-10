@@ -91,6 +91,7 @@ typedef struct {
 #define CLAUDECODE_PERM_TOOL_MAX 20
 #define CLAUDECODE_PERM_PREVIEW_MAX 96
 #define CLAUDECODE_PERM_PROJECT_MAX 48
+#define PERFORMANCE_ERROR_MAX 96
 
 typedef struct {
     bool valid;
@@ -196,6 +197,25 @@ typedef struct {
     char custom_value[97];
     char custom_body[257];
     char custom_footer[97];
+    bool performance_enabled;
+    bool performance_cpu_enabled;
+    bool performance_memory_enabled;
+    bool performance_disk_enabled;
+    bool performance_network_enabled;
+    bool performance_connected;
+    bool performance_stale;
+    time_t performance_sampled_at;
+    char performance_error[PERFORMANCE_ERROR_MAX];
+    bool performance_cpu_available;
+    double performance_cpu_percent;
+    bool performance_memory_available;
+    double performance_memory_percent;
+    bool performance_disk_available;
+    double performance_disk_read_bytes_per_sec;
+    double performance_disk_write_bytes_per_sec;
+    bool performance_network_available;
+    double performance_network_rx_bytes_per_sec;
+    double performance_network_tx_bytes_per_sec;
     bool weather_enabled;
     bool weather_valid;
     bool weather_temperature_available;

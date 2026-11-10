@@ -865,6 +865,95 @@ button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
   padding: 16px;
 }
 
+.performance-icon {
+  position: relative;
+  border: 2px solid var(--green);
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--green);
+  -webkit-mask: none;
+  mask: none;
+}
+.performance-icon::before {
+  position: absolute;
+  top: 3px;
+  left: 8px;
+  width: 2px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+  content: "";
+  transform: rotate(45deg);
+  transform-origin: 50% 7px;
+}
+.performance-icon::after {
+  position: absolute;
+  bottom: 1px;
+  left: 7px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.performance-content { min-width: 0; }
+.performance-status[data-state="online"] { border-color: #24573e; background: #10261b; color: #8ce7b8; }
+.performance-status[data-state="stale"] { border-color: #70612f; background: #39321a; color: #e7ce74; }
+.performance-status[data-state="error"] { border-color: #6b3430; background: #281412; color: #ffaaa4; }
+.performance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.performance-card {
+  --gauge-color: var(--blue);
+  min-width: 0;
+  padding: 20px 16px 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: radial-gradient(circle at 50% 44%, rgb(255 255 255 / .025), transparent 56%), var(--surface);
+}
+#performance-cpu-card { --gauge-color: #5da9ff; }
+#performance-memory-card { --gauge-color: #b49aff; }
+#performance-disk-card { --gauge-color: #f2c66d; }
+#performance-network-card { --gauge-color: #42d98c; }
+.performance-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.performance-card-heading span { display: block; margin-bottom: 4px; color: var(--gauge-color); font-size: 9px; font-weight: 700; letter-spacing: .15em; }
+.performance-card-heading h3 { font-size: 18px; }
+.performance-card-heading small { padding-top: 4px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.performance-gauge { width: 100%; height: auto; display: block; margin: 4px auto 0; overflow: visible; }
+.performance-gauge-track, .performance-gauge-progress { fill: none; stroke-width: 7; stroke-linecap: round; }
+.performance-gauge-track { stroke: #27302e; }
+.performance-gauge-progress { stroke: var(--gauge-color); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--gauge-color) 45%, transparent)); transition: stroke-dasharray 420ms ease, opacity 180ms ease; }
+.performance-gauge-tick { stroke: #52605b; stroke-width: 1.4; stroke-linecap: round; }
+.performance-gauge-tick.major { stroke: #a8b5b0; stroke-width: 2.2; }
+.performance-gauge-scale { fill: var(--muted); font-size: 8px; font-variant-numeric: tabular-nums; text-anchor: middle; }
+.performance-gauge-mid { fill: var(--muted-strong); }
+.performance-gauge-needle { color: var(--gauge-color); transition: transform 420ms cubic-bezier(.2, .75, .25, 1), opacity 180ms ease; }
+.performance-gauge-needle line { stroke: currentColor; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 3px rgb(0 0 0 / .65)); }
+.performance-gauge-hub { fill: #151b1a; stroke: var(--gauge-color); stroke-width: 3; }
+.performance-gauge-value { fill: var(--text); font-size: 23px; font-weight: 700; letter-spacing: -.035em; font-variant-numeric: tabular-nums; text-anchor: middle; }
+.performance-gauge-value.performance-rate-value { font-size: 17px; letter-spacing: -.025em; }
+.performance-card-detail { min-height: 20px; margin-top: -3px; color: var(--muted-strong); font-size: 12px; line-height: 1.55; text-align: center; font-variant-numeric: tabular-nums; }
+.performance-card[data-state="invalid"] .performance-gauge-value { fill: var(--muted); }
+.performance-card[data-state="invalid"] .performance-gauge-progress,
+.performance-card[data-state="invalid"] .performance-gauge-needle { opacity: .3; }
+.performance-empty { min-height: 280px; display: grid; place-content: center; gap: 9px; padding: 40px 24px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); text-align: center; }
+.performance-empty[hidden] { display: none; }
+.performance-empty strong { font-size: 19px; }
+.performance-empty p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.performance-config-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 20px; }
+.performance-config-option { position: relative; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 74px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface-soft); cursor: pointer; }
+.performance-config-option > span:first-child { min-width: 0; display: grid; gap: 5px; }
+.performance-config-option strong { font-size: 13px; }
+.performance-config-option small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.performance-config-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.performance-config-option input:focus-visible + .switch-track { outline: 2px solid var(--blue); outline-offset: 2px; }
+.performance-config-option:has(input:disabled) { cursor: wait; opacity: .65; }
+
+@media (max-width: 1200px) {
+  .performance-grid, .performance-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 900px) {
   .app-shell { width: min(100% - 28px, 760px); }
   .codex-overview, .custom-editor { grid-template-columns: 1fr; }
@@ -898,6 +987,7 @@ button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
   .dashboard-heading-state { align-items: flex-end; flex-direction: column-reverse; gap: 8px; }
   .settings-bambu-fields { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: 1fr; }
+  .performance-grid, .performance-config-grid { grid-template-columns: 1fr; }
   .metric { min-height: 128px; }
   .usage-panel { min-height: 310px; }
   .usage-ring { width: 210px; height: 210px; }

@@ -108,8 +108,11 @@ bool app_state_has_real_data(const codex_snapshot_t *snapshot)
 {
     if (snapshot == NULL || !snapshot->valid) return false;
     if (!snapshot->preview_data) return true;
+    bool performance_online = snapshot->source_online && !snapshot->stale &&
+                              snapshot->performance_enabled && snapshot->performance_connected &&
+                              !snapshot->performance_stale;
     return snapshot->zai_connected || snapshot->bambu_connected ||
-           snapshot->claudecode_connected;
+           snapshot->claudecode_connected || performance_online;
 }
 
 const char *app_state_bambu_status_text(bambu_status_t status)

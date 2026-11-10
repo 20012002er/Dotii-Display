@@ -64,6 +64,11 @@
         <span>窗外小世界</span>
         <span class="module-meta" id="weather-nav-state">读取中</span>
       </button>
+      <button class="module-tab" type="button" data-panel="performance" aria-selected="false">
+        <span class="nav-icon performance-icon" aria-hidden="true"></span>
+        <span>性能监控</span>
+        <span class="module-meta" id="performance-nav-state">读取中</span>
+      </button>
       <button class="module-tab system-tab" type="button" data-panel="system" aria-selected="false">
         <span class="nav-icon settings-icon" aria-hidden="true"></span>
         <span>设置</span>
@@ -693,6 +698,108 @@
             <p class="network-note"><strong>按需取天气</strong><span>每 10 分钟查询一次实况天气；启用前 Dotii 不会连接高德服务。</span></p>
             <div class="form-actions"><button class="primary-button" type="submit">保存</button></div>
           </form>
+        </section>
+      </section>
+
+      <section class="panel" id="panel-performance" aria-labelledby="performance-heading" hidden>
+        <div class="section-heading">
+          <div>
+            <h2 id="performance-heading">性能监控</h2>
+            <p>实时查看这台电脑的处理器、内存、磁盘和网络状态。</p>
+          </div>
+          <span class="status-pill performance-status" id="performance-status" data-state="waiting" role="status" aria-live="polite">等待数据</span>
+        </div>
+
+        <div class="module-content performance-content" id="performance-content">
+          <div class="performance-grid" aria-label="电脑性能仪表">
+            <article class="performance-card" id="performance-cpu-card">
+              <div class="performance-card-heading"><div><span>PROCESSOR</span><h3>CPU</h3></div><small>利用率</small></div>
+              <svg class="performance-gauge" viewBox="0 0 260 190" role="img" aria-label="CPU 利用率仪表">
+                <path class="performance-gauge-track" d="M 59 159 A 82 82 0 1 1 201 159" pathLength="100"></path>
+                <path class="performance-gauge-progress" id="performance-cpu-arc" d="M 59 159 A 82 82 0 1 1 201 159" pathLength="100" stroke-dasharray="0 100"></path>
+                <g class="performance-gauge-ticks" aria-hidden="true"></g>
+                <text class="performance-gauge-scale performance-gauge-min" x="42" y="181">0</text>
+                <text class="performance-gauge-scale performance-gauge-mid" id="performance-cpu-mid" x="130" y="13">50%</text>
+                <text class="performance-gauge-scale performance-gauge-max" id="performance-cpu-max" x="218" y="181">100%</text>
+                <g class="performance-gauge-needle" id="performance-cpu-needle" transform="rotate(-120 130 118)"><line x1="130" y1="129" x2="130" y2="49"></line></g>
+                <circle class="performance-gauge-hub" cx="130" cy="118" r="7"></circle>
+                <text class="performance-gauge-value" id="performance-cpu-value" x="130" y="150">--</text>
+              </svg>
+              <p class="performance-card-detail" id="performance-cpu-detail">等待数据</p>
+            </article>
+
+            <article class="performance-card" id="performance-memory-card">
+              <div class="performance-card-heading"><div><span>MEMORY</span><h3>内存</h3></div><small>占用率</small></div>
+              <svg class="performance-gauge" viewBox="0 0 260 190" role="img" aria-label="内存占用率仪表">
+                <path class="performance-gauge-track" d="M 59 159 A 82 82 0 1 1 201 159" pathLength="100"></path>
+                <path class="performance-gauge-progress" id="performance-memory-arc" d="M 59 159 A 82 82 0 1 1 201 159" pathLength="100" stroke-dasharray="0 100"></path>
+                <g class="performance-gauge-ticks" aria-hidden="true"></g>
+                <text class="performance-gauge-scale performance-gauge-min" x="42" y="181">0</text>
+                <text class="performance-gauge-scale performance-gauge-mid" id="performance-memory-mid" x="130" y="13">50%</text>
+                <text class="performance-gauge-scale performance-gauge-max" id="performance-memory-max" x="218" y="181">100%</text>
+                <g class="performance-gauge-needle" id="performance-memory-needle" transform="rotate(-120 130 118)"><line x1="130" y1="129" x2="130" y2="49"></line></g>
+                <circle class="performance-gauge-hub" cx="130" cy="118" r="7"></circle>
+                <text class="performance-gauge-value" id="performance-memory-value" x="130" y="150">--</text>
+              </svg>
+              <p class="performance-card-detail" id="performance-memory-detail">等待数据</p>
+            </article>
+
+            <article class="performance-card" id="performance-disk-card">
+              <div class="performance-card-heading"><div><span>STORAGE</span><h3>磁盘</h3></div><small>读写总速率</small></div>
+              <svg class="performance-gauge" viewBox="0 0 260 190" role="img" aria-label="磁盘读写总速率仪表">
+                <path class="performance-gauge-track" d="M 59 159 A 82 82 0 1 1 201 159" pathLength="100"></path>
+                <path class="performance-gauge-progress" id="performance-disk-arc" d="M 59 159 A 82 82 0 1 1 201 159" pathLength="100" stroke-dasharray="0 100"></path>
+                <g class="performance-gauge-ticks" aria-hidden="true"></g>
+                <text class="performance-gauge-scale performance-gauge-min" x="42" y="181">0</text>
+                <text class="performance-gauge-scale performance-gauge-mid" id="performance-disk-mid" x="130" y="13">512 B/s</text>
+                <text class="performance-gauge-scale performance-gauge-max" id="performance-disk-max" x="218" y="181">1 KiB/s</text>
+                <g class="performance-gauge-needle" id="performance-disk-needle" transform="rotate(-120 130 118)"><line x1="130" y1="129" x2="130" y2="49"></line></g>
+                <circle class="performance-gauge-hub" cx="130" cy="118" r="7"></circle>
+                <text class="performance-gauge-value performance-rate-value" id="performance-disk-value" x="130" y="150">--</text>
+              </svg>
+              <p class="performance-card-detail" id="performance-disk-detail">读取 -- · 写入 --</p>
+            </article>
+
+            <article class="performance-card" id="performance-network-card">
+              <div class="performance-card-heading"><div><span>NETWORK</span><h3>网络</h3></div><small>收发总速率</small></div>
+              <svg class="performance-gauge" viewBox="0 0 260 190" role="img" aria-label="网络收发总速率仪表">
+                <path class="performance-gauge-track" d="M 59 159 A 82 82 0 1 1 201 159" pathLength="100"></path>
+                <path class="performance-gauge-progress" id="performance-network-arc" d="M 59 159 A 82 82 0 1 1 201 159" pathLength="100" stroke-dasharray="0 100"></path>
+                <g class="performance-gauge-ticks" aria-hidden="true"></g>
+                <text class="performance-gauge-scale performance-gauge-min" x="42" y="181">0</text>
+                <text class="performance-gauge-scale performance-gauge-mid" id="performance-network-mid" x="130" y="13">512 B/s</text>
+                <text class="performance-gauge-scale performance-gauge-max" id="performance-network-max" x="218" y="181">1 KiB/s</text>
+                <g class="performance-gauge-needle" id="performance-network-needle" transform="rotate(-120 130 118)"><line x1="130" y1="129" x2="130" y2="49"></line></g>
+                <circle class="performance-gauge-hub" cx="130" cy="118" r="7"></circle>
+                <text class="performance-gauge-value performance-rate-value" id="performance-network-value" x="130" y="150">--</text>
+              </svg>
+              <p class="performance-card-detail" id="performance-network-detail">接收 -- · 发送 --</p>
+            </article>
+          </div>
+          <article class="performance-empty" id="performance-empty" hidden>
+            <strong>尚未选择监控项目</strong>
+            <p>在下方开启 CPU、内存、磁盘或网络，即可显示对应仪表。</p>
+          </article>
+        </div>
+
+        <section class="module-preferences performance-preferences" aria-labelledby="performance-preferences-heading">
+          <div class="module-preferences-heading">
+            <div><h3 id="performance-preferences-heading">性能监控设置</h3><p>监控项目同时用于后台和 Dotii；页面总开关只控制是否在 Dotii 上显示。</p></div>
+            <label class="module-switch">
+              <span>在 Dotii 上显示</span>
+              <input id="performance-enabled" type="checkbox" checked>
+              <span class="switch-track" aria-hidden="true"></span>
+            </label>
+          </div>
+          <article class="dependency-panel module-preference-card performance-config-panel">
+            <div class="dependency-heading"><div><h3>监控项目</h3><p>关闭后隐藏对应仪表，其他项目会继续更新。</p></div></div>
+            <div class="performance-config-grid">
+              <label class="performance-config-option"><span><strong>CPU</strong><small>处理器利用率</small></span><input id="performance-cpu-enabled" type="checkbox" checked><span class="switch-track" aria-hidden="true"></span></label>
+              <label class="performance-config-option"><span><strong>内存</strong><small>内存占用率</small></span><input id="performance-memory-enabled" type="checkbox" checked><span class="switch-track" aria-hidden="true"></span></label>
+              <label class="performance-config-option"><span><strong>磁盘</strong><small>读取与写入速率</small></span><input id="performance-disk-enabled" type="checkbox" checked><span class="switch-track" aria-hidden="true"></span></label>
+              <label class="performance-config-option"><span><strong>网络</strong><small>接收与发送速率</small></span><input id="performance-network-enabled" type="checkbox" checked><span class="switch-track" aria-hidden="true"></span></label>
+            </div>
+          </article>
         </section>
       </section>
 

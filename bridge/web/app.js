@@ -21,6 +21,12 @@ const state = {
     lastY: 0,
   },
   moduleSaving: {},
+  performanceConfig: null,
+  performanceConfigSaving: false,
+  performanceRateScales: {
+    disk: { max: 1024, lowerSamples: 0, sampleEpoch: 0 },
+    network: { max: 1024, lowerSamples: 0, sampleEpoch: 0 },
+  },
   bambuLoaded: false,
   zaiLoaded: false,
   weatherLoaded: false,
@@ -1690,6 +1696,203 @@ function renderCodexTaskSwitcher(tasks) {
   });
 }
 
+const PERFORMANCE_METRICS = ["cpu", "memory", "disk", "network"];
+
+function normalizePerformanceConfig(config = {}, performance = {}) {
+  return Object.fromEntries(PERFORMANCE_METRICS.map((metric) => {
+    const key = `${metric}_enabled`;
+    const value = config[key] ?? performance[key];
+    return [key, value === undefined ? true : value === true];
+  }));
+}
+
+function syncPerformanceConfigControls(config) {
+  PERFORMANCE_METRICS.forEach((metric) => {
+    byId(`performance-${metric}-enabled`).checked = config[`${metric}_enabled`] === true;
+  });
+}
+
+function readPerformanceConfigControls() {
+  return Object.fromEntries(PERFORMANCE_METRICS.map((metric) => [
+    `${metric}_enabled`, byId(`performance-${metric}-enabled`).checked,
+  ]));
+}
+
+function createPerformanceGaugeTicks() {
+  document.querySelectorAll(".performance-gauge-ticks").forEach((group) => {
+    if (group.childElementCount) return;
+    for (let index = 0; index <= 10; index += 1) {
+      const angle = (150 + index * 24) * Math.PI / 180;
+      const major = index % 5 === 0;
+      const innerRadius = major ? 85 : 88;
+      const outerRadius = 96;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", String(130 + Math.cos(angle) * innerRadius));
+      line.setAttribute("y1", String(118 + Math.sin(angle) * innerRadius));
+      line.setAttribute("x2", String(130 + Math.cos(angle) * outerRadius));
+      line.setAttribute("y2", String(118 + Math.sin(angle) * outerRadius));
+      line.setAttribute("class", major ? "performance-gauge-tick major" : "performance-gauge-tick");
+      group.append(line);
+    }
+  });
+}
+
+function performanceNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function formatPerformancePercent(value) {
+  return `${Math.round(value * 10) / 10}%`;
+}
+
+function formatPerformanceRate(value) {
+  const bytes = performanceNumber(value);
+  if (bytes === null) return "--";
+  const units = ["B", "KiB", "MiB", "GiB"];
+  let scaled = bytes;
+  let unit = 0;
+  while (scaled >= 1024 && unit < units.length - 1) {
+    scaled /= 1024;
+    unit += 1;
+  }
+  const digits = unit === 0 || scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+  return `${scaled.toFixed(digits)} ${units[unit]}/s`;
+}
+
+function requiredPerformanceScale(value) {
+  const target = Math.max(1, value * 1.25);
+  let scale = 1;
+  while (scale < target) scale *= 4;
+  return scale;
+}
+
+function updatePerformanceRateScale(metric, value, sampleEpoch) {
+  const scaleState = state.performanceRateScales[metric];
+  const epoch = Number(sampleEpoch) || 0;
+  if (epoch && scaleState.sampleEpoch === epoch) return scaleState.max;
+  if (epoch) scaleState.sampleEpoch = epoch;
+  const required = requiredPerformanceScale(value);
+  if (required > scaleState.max) {
+    scaleState.max = required;
+    scaleState.lowerSamples = 0;
+  } else if (required < scaleState.max) {
+    scaleState.lowerSamples += 1;
+    if (scaleState.lowerSamples >= 3) {
+      scaleState.max = Math.max(required, scaleState.max / 4);
+      scaleState.lowerSamples = 0;
+    }
+  } else {
+    scaleState.lowerSamples = 0;
+  }
+  return scaleState.max;
+}
+
+function renderPerformanceGauge(metric, value, max, displayValue, valid, rate = false) {
+  const fraction = valid && max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+  byId(`performance-${metric}-arc`).style.setProperty("stroke-dasharray", `${fraction * 100} 100`);
+  byId(`performance-${metric}-needle`).setAttribute("transform", `rotate(${-120 + fraction * 240} 130 118)`);
+  byId(`performance-${metric}-card`).dataset.state = valid ? "online" : "invalid";
+  setText(`performance-${metric}-value`, displayValue);
+  setText(`performance-${metric}-mid`, rate ? formatPerformanceRate(max / 2) : formatPerformancePercent(max / 2));
+  setText(`performance-${metric}-max`, rate ? formatPerformanceRate(max) : formatPerformancePercent(max));
+}
+
+function renderPerformancePercentMetric(metric, data, sampleValid, detail) {
+  const percent = performanceNumber(data?.percent);
+  const valid = sampleValid && data?.available === true && percent !== null;
+  const value = valid ? Math.min(100, percent) : 0;
+  renderPerformanceGauge(metric, value, 100, valid ? formatPerformancePercent(value) : "--", valid);
+  setText(`performance-${metric}-detail`, valid ? detail : "--");
+}
+
+function renderPerformanceRateMetric(metric, data, sampleValid, firstKey, secondKey, firstLabel, secondLabel, sampleEpoch) {
+  const first = performanceNumber(data?.[firstKey]);
+  const second = performanceNumber(data?.[secondKey]);
+  const valid = sampleValid && data?.available === true && first !== null && second !== null;
+  const total = valid ? first + second : 0;
+  const scaleState = state.performanceRateScales[metric];
+  const max = valid ? updatePerformanceRateScale(metric, total, sampleEpoch) : scaleState.max;
+  if (!valid) scaleState.lowerSamples = 0;
+  renderPerformanceGauge(metric, total, max, valid ? formatPerformanceRate(total) : "--", valid, true);
+  setText(`performance-${metric}-detail`, valid
+    ? `${firstLabel} ${formatPerformanceRate(first)} · ${secondLabel} ${formatPerformanceRate(second)}`
+    : `${firstLabel} -- · ${secondLabel} --`);
+}
+
+function renderPerformance(performance = {}, config = normalizePerformanceConfig(), dotiiEnabled = true) {
+  let visibleCount = 0;
+  PERFORMANCE_METRICS.forEach((metric) => {
+    const visible = config[`${metric}_enabled`] === true;
+    byId(`performance-${metric}-card`).hidden = !visible;
+    if (visible) visibleCount += 1;
+  });
+  byId("performance-empty").hidden = visibleCount !== 0;
+  setText("performance-nav-state", dotiiEnabled ? "Dotii 显示中" : "仅后台");
+
+  const stale = performance.stale === true;
+  const connected = performance.connected === true;
+  const error = typeof performance.error === "string" ? performance.error.trim() : "";
+  const sampleValid = connected && !stale && !error;
+  const sampledAt = performance.sampled_at_epoch ? ` · ${formatTime(performance.sampled_at_epoch)}` : "";
+  const status = byId("performance-status");
+  if (!visibleCount) {
+    status.dataset.state = "waiting";
+    status.textContent = "未选择监控项目";
+  } else if (stale) {
+    status.dataset.state = "stale";
+    status.textContent = `数据已过期${sampledAt}`;
+  } else if (!connected) {
+    status.dataset.state = "error";
+    status.textContent = error ? `性能数据离线 · ${error}` : "等待性能数据连接";
+  } else if (error) {
+    status.dataset.state = "error";
+    status.textContent = `采集异常 · ${error}`;
+  } else {
+    status.dataset.state = "online";
+    status.textContent = `实时监控${sampledAt}`;
+  }
+
+  renderPerformancePercentMetric("cpu", performance.cpu || {}, sampleValid, "处理器总利用率");
+  renderPerformancePercentMetric("memory", performance.memory || {}, sampleValid, "物理内存占用率");
+  renderPerformanceRateMetric("disk", performance.disk || {}, sampleValid,
+    "read_bytes_per_sec", "write_bytes_per_sec", "读取", "写入", performance.sampled_at_epoch);
+  renderPerformanceRateMetric("network", performance.network || {}, sampleValid,
+    "rx_bytes_per_sec", "tx_bytes_per_sec", "接收", "发送", performance.sampled_at_epoch);
+}
+
+async function updatePerformanceConfig() {
+  if (state.performanceConfigSaving) return;
+  const previous = { ...(state.performanceConfig || normalizePerformanceConfig(
+    state.overview?.performance_config || {}, state.overview?.snapshot?.performance || {},
+  )) };
+  const payload = readPerformanceConfigControls();
+  state.performanceConfig = payload;
+  state.performanceConfigSaving = true;
+  PERFORMANCE_METRICS.forEach((metric) => { byId(`performance-${metric}-enabled`).disabled = true; });
+  renderPerformance(state.overview?.snapshot?.performance || {}, payload, byId("performance-enabled").checked);
+  try {
+    const response = await fetch("/api/v1/admin/performance/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "性能监控配置保存失败");
+    showToast("性能监控配置已保存");
+  } catch (error) {
+    state.performanceConfig = previous;
+    syncPerformanceConfigControls(previous);
+    renderPerformance(state.overview?.snapshot?.performance || {}, previous, byId("performance-enabled").checked);
+    showToast(error.message || "性能监控配置保存失败");
+  } finally {
+    state.performanceConfigSaving = false;
+    PERFORMANCE_METRICS.forEach((metric) => { byId(`performance-${metric}-enabled`).disabled = false; });
+    await refreshOverview();
+  }
+}
+
 function renderOverview(overview) {
   state.overview = overview;
   if (!state.codexChecking && overview.codex_check) state.codexCheck = overview.codex_check;
@@ -1711,6 +1914,7 @@ function renderOverview(overview) {
   const claudecodeEnabled = modules.claudecode?.enabled !== false;
   const dotiiEnabled = modules.dotii?.enabled !== false;
   const weatherEnabled = modules.weather?.enabled === true;
+  const performanceEnabled = modules.performance?.enabled === true;
   const weeklyAvailable = codex.weekly_available !== false;
   const weekly = weeklyAvailable ? Math.max(0, Math.min(100, Number(codex.weekly_remaining_percent) || 0)) : 0;
   const fiveHourAvailable = codex.five_hour_available === true;
@@ -1741,6 +1945,12 @@ function renderOverview(overview) {
   if (!state.moduleSaving.zai) byId("zai-enabled").checked = zaiEnabled;
   if (!state.moduleSaving.claudecode) byId("claudecode-enabled").checked = claudecodeEnabled;
   if (!state.moduleSaving.weather) byId("weather-enabled").checked = weatherEnabled;
+  if (!state.moduleSaving.performance) byId("performance-enabled").checked = performanceEnabled;
+  const incomingPerformanceConfig = normalizePerformanceConfig(overview.performance_config || {}, snapshot.performance || {});
+  if (!state.performanceConfigSaving) {
+    state.performanceConfig = incomingPerformanceConfig;
+    syncPerformanceConfigControls(incomingPerformanceConfig);
+  }
   byId("codex-content").hidden = !codexEnabled;
   renderCodexCheck(state.codexCheck, codexEnabled, bridge);
   byId("bambu-content").hidden = !bambuEnabled;
@@ -1753,6 +1963,7 @@ function renderOverview(overview) {
   renderNotion(snapshot.notion || {}, overview.notion_config || {}, overview.notion_config?.enabled !== false);
   renderNotionCheck(state.notionCheck, overview.notion_config?.enabled !== false);
   renderWeather(snapshot.weather || {}, overview.weather_config || {}, weatherEnabled);
+  renderPerformance(snapshot.performance || {}, state.performanceConfig || incomingPerformanceConfig, performanceEnabled);
   renderClaudecode(snapshot.claudecode || {}, claudecodeEnabled);
   const incomingDotiiConfig = overview.dotii_config;
   if (!state.dotiiConfigDirty && !state.dotiiConfigSaving && incomingDotiiConfig
@@ -1993,7 +2204,7 @@ async function updateModule(moduleId, enabled) {
   state.moduleSaving[moduleId] = true;
   const checkbox = byId(`${moduleId}-enabled`);
   const content = byId(`${moduleId}-content`);
-  content.hidden = !enabled;
+  if (moduleId !== "performance") content.hidden = !enabled;
   try {
     const response = await fetch("/api/v1/admin/modules", {
       method: "POST",
@@ -2002,11 +2213,13 @@ async function updateModule(moduleId, enabled) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "设置失败");
-    const moduleName = { codex: "Codex", bambu: "Bambu", dotii: "Dotii" }[moduleId] || moduleId;
-    showToast(`${moduleName} 页面已${enabled ? "启用" : "关闭"}`);
+    const moduleName = { codex: "Codex", bambu: "Bambu", dotii: "Dotii", performance: "性能监控" }[moduleId] || moduleId;
+    showToast(moduleId === "performance"
+      ? `Dotii 性能监控页面已${enabled ? "启用" : "关闭"}`
+      : `${moduleName} 页面已${enabled ? "启用" : "关闭"}`);
   } catch (error) {
     checkbox.checked = !enabled;
-    content.hidden = enabled;
+    if (moduleId !== "performance") content.hidden = enabled;
     showToast(error.message || "设置失败");
   } finally {
     state.moduleSaving[moduleId] = false;
@@ -2441,6 +2654,10 @@ byId("zai-form").addEventListener("submit", saveZai);
 byId("zai-check").addEventListener("click", checkZai);
 byId("weather-enabled").addEventListener("change", (event) => updateModule("weather", event.target.checked));
 byId("weather-form").addEventListener("submit", saveWeather);
+byId("performance-enabled").addEventListener("change", (event) => updateModule("performance", event.target.checked));
+PERFORMANCE_METRICS.forEach((metric) => {
+  byId(`performance-${metric}-enabled`).addEventListener("change", updatePerformanceConfig);
+});
 byId("notion-form").addEventListener("submit", saveNotion);
 byId("notion-check").addEventListener("click", checkNotion);
 byId("claudecode-enabled").addEventListener("change", (event) => updateModule("claudecode", event.target.checked));
@@ -2551,6 +2768,7 @@ byId("custom-form").addEventListener("input", (event) => {
 });
 
 setupUiSelects();
+createPerformanceGaugeTicks();
 loadDotiiExpressions();
 refreshOverview();
 window.setInterval(refreshOverview, 3000);

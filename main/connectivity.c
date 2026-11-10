@@ -1,6 +1,7 @@
 #include "connectivity.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -476,6 +477,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     snapshot->zai_enabled = false;
     snapshot->claudecode_enabled = false;
     snapshot->weather_enabled = false;
+    snapshot->performance_enabled = false;
     cJSON *modules = cJSON_GetObjectItemCaseSensitive(root, "modules");
     if (!cJSON_IsObject(modules)) return;
 
@@ -485,12 +487,14 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     cJSON *zai = cJSON_GetObjectItemCaseSensitive(modules, "zai");
     cJSON *claudecode = cJSON_GetObjectItemCaseSensitive(modules, "claudecode");
     cJSON *weather = cJSON_GetObjectItemCaseSensitive(modules, "weather");
+    cJSON *performance = cJSON_GetObjectItemCaseSensitive(modules, "performance");
     if (cJSON_IsBool(codex)) snapshot->codex_enabled = cJSON_IsTrue(codex);
     if (cJSON_IsBool(bambu)) snapshot->bambu_enabled = cJSON_IsTrue(bambu);
     if (cJSON_IsBool(dotii)) snapshot->dotii_enabled = cJSON_IsTrue(dotii);
     if (cJSON_IsBool(zai)) snapshot->zai_enabled = cJSON_IsTrue(zai);
     if (cJSON_IsBool(claudecode)) snapshot->claudecode_enabled = cJSON_IsTrue(claudecode);
     if (cJSON_IsBool(weather)) snapshot->weather_enabled = cJSON_IsTrue(weather);
+    if (cJSON_IsBool(performance)) snapshot->performance_enabled = cJSON_IsTrue(performance);
 }
 
 static window_weather_t weather_condition_from_string(const char *condition)
@@ -529,6 +533,86 @@ static void copy_weather_status(cJSON *root, codex_snapshot_t *snapshot)
     if (cJSON_IsNumber(temperature)) snapshot->weather_temperature = temperature->valueint;
     cJSON *updated = cJSON_GetObjectItemCaseSensitive(weather, "updated_at_epoch");
     if (cJSON_IsNumber(updated)) snapshot->weather_updated_at = (time_t)updated->valuedouble;
+}
+
+static double performance_number(cJSON *object, const char *name, bool *valid)
+{
+    cJSON *item = cJSON_GetObjectItemCaseSensitive(object, name);
+    if (!cJSON_IsNumber(item) || !isfinite(item->valuedouble) || item->valuedouble < 0) {
+        *valid = false;
+        return 0;
+    }
+    *valid = true;
+    return item->valuedouble;
+}
+
+static void copy_performance_status(cJSON *root, codex_snapshot_t *snapshot)
+{
+    cJSON *performance = cJSON_GetObjectItemCaseSensitive(root, "performance");
+    if (!cJSON_IsObject(performance)) return;
+
+    snapshot->performance_cpu_enabled = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(performance, "cpu_enabled"));
+    snapshot->performance_memory_enabled = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(performance, "memory_enabled"));
+    snapshot->performance_disk_enabled = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(performance, "disk_enabled"));
+    snapshot->performance_network_enabled = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(performance, "network_enabled"));
+    snapshot->performance_connected = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(performance, "connected"));
+    snapshot->performance_stale = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(performance, "stale"));
+    copy_json_string(performance, "error", snapshot->performance_error,
+                     sizeof(snapshot->performance_error));
+    cJSON *sampled = cJSON_GetObjectItemCaseSensitive(performance, "sampled_at_epoch");
+    if (cJSON_IsNumber(sampled) && isfinite(sampled->valuedouble) && sampled->valuedouble >= 0) {
+        snapshot->performance_sampled_at = (time_t)sampled->valuedouble;
+    }
+
+    bool percent_valid = false;
+    bool first_valid = false;
+    bool second_valid = false;
+    cJSON *cpu = cJSON_GetObjectItemCaseSensitive(performance, "cpu");
+    if (cJSON_IsObject(cpu)) {
+        snapshot->performance_cpu_percent = performance_number(cpu, "percent", &percent_valid);
+        if (percent_valid && snapshot->performance_cpu_percent > 100) {
+            snapshot->performance_cpu_percent = 100;
+        }
+        snapshot->performance_cpu_available = percent_valid && cJSON_IsTrue(
+            cJSON_GetObjectItemCaseSensitive(cpu, "available"));
+    }
+
+    percent_valid = false;
+    cJSON *memory = cJSON_GetObjectItemCaseSensitive(performance, "memory");
+    if (cJSON_IsObject(memory)) {
+        snapshot->performance_memory_percent = performance_number(memory, "percent", &percent_valid);
+        if (percent_valid && snapshot->performance_memory_percent > 100) {
+            snapshot->performance_memory_percent = 100;
+        }
+        snapshot->performance_memory_available = percent_valid && cJSON_IsTrue(
+            cJSON_GetObjectItemCaseSensitive(memory, "available"));
+    }
+
+    cJSON *disk = cJSON_GetObjectItemCaseSensitive(performance, "disk");
+    if (cJSON_IsObject(disk)) {
+        snapshot->performance_disk_read_bytes_per_sec =
+            performance_number(disk, "read_bytes_per_sec", &first_valid);
+        snapshot->performance_disk_write_bytes_per_sec =
+            performance_number(disk, "write_bytes_per_sec", &second_valid);
+        snapshot->performance_disk_available = first_valid && second_valid && cJSON_IsTrue(
+            cJSON_GetObjectItemCaseSensitive(disk, "available"));
+    }
+
+    cJSON *network = cJSON_GetObjectItemCaseSensitive(performance, "network");
+    if (cJSON_IsObject(network)) {
+        snapshot->performance_network_rx_bytes_per_sec =
+            performance_number(network, "rx_bytes_per_sec", &first_valid);
+        snapshot->performance_network_tx_bytes_per_sec =
+            performance_number(network, "tx_bytes_per_sec", &second_valid);
+        snapshot->performance_network_available = first_valid && second_valid && cJSON_IsTrue(
+            cJSON_GetObjectItemCaseSensitive(network, "available"));
+    }
 }
 
 static uint32_t dotii_state_token_from_string(const char *value)
@@ -926,6 +1010,7 @@ static bool parse_snapshot(const char *json, codex_snapshot_t *snapshot)
     copy_zai_status(root, snapshot);
     copy_claudecode_status(root, snapshot);
     copy_weather_status(root, snapshot);
+    copy_performance_status(root, snapshot);
     copy_dotii_state(root, snapshot);
     ok = true;
 
