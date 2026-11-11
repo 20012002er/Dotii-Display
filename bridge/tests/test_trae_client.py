@@ -121,7 +121,7 @@ class TraeHookCommandTests(unittest.TestCase):
         cmd = permission_hook_command(8787)
         self.assertIn("127.0.0.1:8787", cmd)
         self.assertIn("/api/v1/admin/trae/permission", cmd)
-        self.assertIn("-m 310", cmd)
+        self.assertIn("-m 35", cmd)
 
 
 class TraeHooksInstallTests(unittest.TestCase):
@@ -210,7 +210,7 @@ class TraeHooksInstallTests(unittest.TestCase):
             update_hooks(path, 8787, "install")
             settings = json.loads(path.read_text(encoding="utf-8"))
             pretool = settings["hooks"]["PreToolUse"][0]["hooks"][0]
-            self.assertEqual(pretool["timeout"], 310)
+            self.assertEqual(pretool["timeout"], 35)
             # 普通事件用默认超时
             session = settings["hooks"]["SessionStart"][0]["hooks"][0]
             self.assertEqual(session["timeout"], 30)

@@ -140,6 +140,30 @@ class CodexUiConfigTests(unittest.TestCase):
         self.assertEqual(state["state"], "claudecode_working")
         self.assertEqual(state["expression"], "working")
 
+    def test_dotii_state_assistant_modules_share_expression_mapping(self) -> None:
+        expected_states = {
+            "waiting_user": "trae_waiting_user",
+            "working": "trae_working",
+            "completed": "trae_completed",
+            "failed": "trae_failure",
+        }
+        for status, expected_state in expected_states.items():
+            with self.subTest(status=status):
+                codex = dotii_state(
+                    {"codex": {"task": {"status": status}}}, {}, True, default_dotii_config(),
+                )
+                claudecode = dotii_state(
+                    {"codex": {"task": {"status": "idle"}}}, {}, True, default_dotii_config(),
+                    claudecode={"connected": True, "status": status},
+                )
+                trae = dotii_state(
+                    {"codex": {"task": {"status": "idle"}}}, {}, True, default_dotii_config(),
+                    trae={"connected": True, "status": status},
+                )
+                self.assertEqual(claudecode["expression"], codex["expression"])
+                self.assertEqual(trae["expression"], codex["expression"])
+                self.assertEqual(trae["state"], expected_state)
+
     def test_dotii_state_ignores_seeded_codex_when_module_disabled(self) -> None:
         """模块关闭时 state.json 里的预览任务不得遮蔽实时模块的状态。"""
         snapshot = {"modules": {"codex": False},
@@ -240,6 +264,30 @@ class CodexUiConfigTests(unittest.TestCase):
                 validate_dotii_config(config)["animations"]["working"]["state_duration_ms"],
                 duration,
             )
+
+    def test_dotii_config_migrates_trae_defaults_only_for_legacy_configs(self) -> None:
+        config = default_dotii_config()
+        config["available_states"] = [
+            item for item in config["available_states"] if item["group"] != "trae"
+        ]
+        for animation in config["animations"].values():
+            animation["states"] = [
+                state_id for state_id in animation["states"] if not state_id.startswith("trae_")
+            ]
+
+        migrated = validate_dotii_config(config)
+        expected = {
+            "curious": "trae_waiting_user",
+            "working": "trae_working",
+            "complete": "trae_completed",
+            "failure": "trae_failure",
+        }
+        for expression_id, state_id in expected.items():
+            self.assertIn(state_id, migrated["animations"][expression_id]["states"])
+
+        migrated["animations"]["working"]["states"].remove("trae_working")
+        customized = validate_dotii_config(migrated)
+        self.assertNotIn("trae_working", customized["animations"]["working"]["states"])
 
     def test_dotii_config_migrates_shared_legacy_module_states(self) -> None:
         config = default_dotii_config()

@@ -574,6 +574,18 @@ def validate_dotii_config(payload: Any) -> dict[str, Any]:
                     )
                 assigned_states[state_id] = expression_id
 
+    # 老配置没有 TRAE 状态定义时，只迁移一次默认映射；保存后的配置
+    # 带有新定义，用户之后取消分配不会被再次覆盖。
+    configured_states = payload.get("available_states")
+    has_trae_definitions = isinstance(configured_states, list) and any(
+        isinstance(item, dict) and str(item.get("id") or "").startswith("trae_")
+        for item in configured_states
+    )
+    if not has_trae_definitions:
+        for state_id, expression_id in DOTII_DEFAULT_BUSINESS_EXPRESSION.items():
+            if state_id.startswith("trae_") and state_id not in assigned_states:
+                assigned_states[state_id] = expression_id
+
     validated_animations: dict[str, Any] = {
         expression_id: {"states": [], "state_duration_ms": 0}
         for expression_id in DOTII_EXPRESSION_IDS

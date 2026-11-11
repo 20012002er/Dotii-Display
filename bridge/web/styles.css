@@ -789,6 +789,7 @@ button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
 .dotii-config-row-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .dotii-config-row-heading > div { min-width: 0; }
 .dotii-config-row-heading strong { font-size: 14px; }
+.dotii-config-purpose { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .dotii-state-picker { position: relative; flex: 0 0 auto; }
 .dotii-state-picker summary { min-height: 32px; display: inline-flex; align-items: center; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: #111817; color: var(--muted-strong); font-size: 12px; cursor: pointer; list-style: none; }
 .dotii-state-picker summary::-webkit-details-marker { display: none; }

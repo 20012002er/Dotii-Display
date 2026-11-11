@@ -114,6 +114,14 @@ const DOTII_STATE_FALLBACK = [
   { id: "codex_working", label: "工作中", group: "codex" },
   { id: "codex_completed", label: "任务完成", group: "codex" },
   { id: "codex_failure", label: "失败或异常", group: "codex" },
+  { id: "claudecode_waiting_user", label: "等待操作", group: "claudecode" },
+  { id: "claudecode_working", label: "工作中", group: "claudecode" },
+  { id: "claudecode_completed", label: "任务完成", group: "claudecode" },
+  { id: "claudecode_failure", label: "失败或异常", group: "claudecode" },
+  { id: "trae_waiting_user", label: "等待操作", group: "trae" },
+  { id: "trae_working", label: "工作中", group: "trae" },
+  { id: "trae_completed", label: "任务完成", group: "trae" },
+  { id: "trae_failure", label: "失败或异常", group: "trae" },
   { id: "bambu_paused", label: "已暂停", group: "bambu" },
   { id: "bambu_printing", label: "打印中", group: "bambu" },
   { id: "bambu_completed", label: "打印完成", group: "bambu" },
@@ -121,6 +129,8 @@ const DOTII_STATE_FALLBACK = [
 ];
 const DOTII_STATE_GROUP_FALLBACK = [
   { id: "codex", label: "Codex 状态" },
+  { id: "claudecode", label: "Claude Code 状态" },
+  { id: "trae", label: "TRAE 状态" },
   { id: "bambu", label: "Bambu 状态" },
 ];
 const DOTII_FIXED_STATE_FALLBACK = [
@@ -359,7 +369,10 @@ function renderDotiiConfigEditor() {
     const title = document.createElement("div");
     const name = document.createElement("strong");
     name.textContent = expression.label;
-    title.append(name);
+    const purpose = document.createElement("p");
+    purpose.className = "dotii-config-purpose";
+    purpose.textContent = expression.purpose;
+    title.append(name, purpose);
 
     const picker = document.createElement("details");
     picker.className = "dotii-state-picker";

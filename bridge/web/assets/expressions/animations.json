@@ -63,7 +63,7 @@
     {
       "id": "curious",
       "label": "好奇",
-      "purpose": "发现新事件或等待用户",
+      "purpose": "Codex、Claude Code、TRAE 等待操作，或 Bambu 打印暂停",
       "src": "/assets/expressions/dotii-curious.webp",
       "format": "animated_webp",
       "canvas": [
@@ -163,7 +163,7 @@
     {
       "id": "working",
       "label": "工作中",
-      "purpose": "任务运行或数据处理中",
+      "purpose": "Codex、Claude Code、TRAE 工作中，或 Bambu 打印中",
       "src": "/assets/expressions/dotii-working.webp",
       "format": "animated_webp",
       "canvas": [
@@ -188,7 +188,7 @@
     {
       "id": "complete",
       "label": "完成",
-      "purpose": "任务成功完成",
+      "purpose": "Codex、Claude Code、TRAE 任务完成，或 Bambu 打印完成",
       "src": "/assets/expressions/dotii-complete.webp",
       "format": "animated_webp",
       "canvas": [
@@ -213,7 +213,7 @@
     {
       "id": "failure",
       "label": "失败",
-      "purpose": "任务失败或可恢复错误",
+      "purpose": "Codex、Claude Code、TRAE 任务失败，或 Bambu 打印故障",
       "src": "/assets/expressions/dotii-failure.webp",
       "format": "animated_webp",
       "canvas": [
