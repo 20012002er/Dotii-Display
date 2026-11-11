@@ -81,7 +81,7 @@ class CodexUiConfigTests(unittest.TestCase):
 
     def test_module_config_migrates_dotii_as_enabled(self) -> None:
         modules = validate_module_config({"codex": True, "bambu": False})
-        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True, "weather": False, "performance": False})
+        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False})
 
     def test_dotii_state_prioritizes_failure_then_active_work(self) -> None:
         failed = dotii_state(
@@ -194,7 +194,7 @@ class CodexUiConfigTests(unittest.TestCase):
         self.assertFalse(state["state_hold"])
         self.assertEqual(
             validated["animations"]["working"]["states"],
-            ["codex_working", "claudecode_working", "bambu_printing", "codex_waiting_user"],
+            ["codex_working", "claudecode_working", "trae_working", "bambu_printing", "codex_waiting_user"],
         )
 
     def test_dotii_config_rejects_duplicate_business_states(self) -> None:
@@ -293,7 +293,7 @@ class CodexUiConfigTests(unittest.TestCase):
         self.assertIn("codex_working", migrated["animations"]["working"]["states"])
         self.assertEqual(migrated["animations"]["working"]["state_duration_ms"], 0)
         self.assertEqual(len(migrated["fixed_states"]), 5)
-        self.assertEqual([group["id"] for group in migrated["state_groups"]], ["codex", "claudecode", "bambu"])
+        self.assertEqual([group["id"] for group in migrated["state_groups"]], ["codex", "claudecode", "trae", "bambu"])
 
     def test_dotii_state_distinguishes_codex_working_from_bambu_printing(self) -> None:
         config = default_dotii_config()
@@ -431,7 +431,7 @@ class CodexUiConfigTests(unittest.TestCase):
         bridge.assets = mock.Mock()
         bridge.assets.source_info.return_value = {}
         bridge.assets.render_info.return_value = {}
-        for name in ("bambu", "zai", "notion", "weather", "claudecode", "claudecode_permission"):
+        for name in ("bambu", "zai", "notion", "weather", "claudecode", "claudecode_permission", "trae", "trae_permission"):
             service = mock.Mock()
             service.snapshot.return_value = {}
             setattr(bridge, name, service)

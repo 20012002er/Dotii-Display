@@ -123,6 +123,10 @@ typedef struct {
     bool claudecode_connected;
     bool claudecode_perm_enabled;
     bool claudecode_perm_pending;
+    bool trae_enabled;
+    bool trae_connected;
+    bool trae_perm_enabled;
+    bool trae_perm_pending;
     bool dotii_base_idle;
     bool dotii_state_assigned;
     bool dotii_return_enabled;
@@ -151,6 +155,15 @@ typedef struct {
     char claudecode_perm_project[CLAUDECODE_PERM_PROJECT_MAX];
     time_t claudecode_perm_expires;
     uint8_t claudecode_perm_queued;
+    uint8_t trae_session_count;
+    time_t trae_updated_at;
+    claudecode_session_t trae_sessions[CLAUDECODE_SESSION_MAX];
+    char trae_perm_id[CLAUDECODE_PERM_ID_MAX];
+    char trae_perm_tool[CLAUDECODE_PERM_TOOL_MAX];
+    char trae_perm_preview[CLAUDECODE_PERM_PREVIEW_MAX];
+    char trae_perm_project[CLAUDECODE_PERM_PROJECT_MAX];
+    time_t trae_perm_expires;
+    uint8_t trae_perm_queued;
     char reset_date[16];
     char plan_type[32];
     codex_task_status_t status;
@@ -172,6 +185,7 @@ typedef struct {
     uint32_t custom_image_size;
     bambu_status_t bambu_status;
     codex_task_status_t claudecode_status;
+    codex_task_status_t trae_status;
     dotii_expression_t dotii_expression;
     uint32_t dotii_state_duration_ms;
     uint32_t dotii_state_token;

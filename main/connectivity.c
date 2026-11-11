@@ -66,10 +66,16 @@ typedef enum {
     BAMBU_COMMAND_STOP,
 } bambu_command_t;
 
-/* Dotii 屏上批准/拒绝 Claude Code 权限请求（管理中心下发 id，回传决策）。 */
+/* Dotii 屏上批准/拒绝权限请求（管理中心下发 id，回传决策）。 */
+typedef enum {
+    DECISION_TARGET_CLAUDECODE = 0,
+    DECISION_TARGET_TRAE,
+} decision_target_t;
+
 typedef struct {
     char id[CLAUDECODE_PERM_ID_MAX];
     bool allow;
+    decision_target_t target;
 } claudecode_decision_t;
 
 typedef struct {
@@ -476,6 +482,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
        hidden until the field explicitly enables it. */
     snapshot->zai_enabled = false;
     snapshot->claudecode_enabled = false;
+    snapshot->trae_enabled = false;
     snapshot->weather_enabled = false;
     snapshot->performance_enabled = false;
     cJSON *modules = cJSON_GetObjectItemCaseSensitive(root, "modules");
@@ -486,6 +493,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     cJSON *dotii = cJSON_GetObjectItemCaseSensitive(modules, "dotii");
     cJSON *zai = cJSON_GetObjectItemCaseSensitive(modules, "zai");
     cJSON *claudecode = cJSON_GetObjectItemCaseSensitive(modules, "claudecode");
+    cJSON *trae = cJSON_GetObjectItemCaseSensitive(modules, "trae");
     cJSON *weather = cJSON_GetObjectItemCaseSensitive(modules, "weather");
     cJSON *performance = cJSON_GetObjectItemCaseSensitive(modules, "performance");
     if (cJSON_IsBool(codex)) snapshot->codex_enabled = cJSON_IsTrue(codex);
@@ -493,6 +501,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     if (cJSON_IsBool(dotii)) snapshot->dotii_enabled = cJSON_IsTrue(dotii);
     if (cJSON_IsBool(zai)) snapshot->zai_enabled = cJSON_IsTrue(zai);
     if (cJSON_IsBool(claudecode)) snapshot->claudecode_enabled = cJSON_IsTrue(claudecode);
+    if (cJSON_IsBool(trae)) snapshot->trae_enabled = cJSON_IsTrue(trae);
     if (cJSON_IsBool(weather)) snapshot->weather_enabled = cJSON_IsTrue(weather);
     if (cJSON_IsBool(performance)) snapshot->performance_enabled = cJSON_IsTrue(performance);
 }
@@ -907,6 +916,77 @@ static void copy_claudecode_status(cJSON *root, codex_snapshot_t *snapshot)
                                         snapshot->claudecode_perm_expires > 0;
 }
 
+static void copy_trae_status(cJSON *root, codex_snapshot_t *snapshot)
+{
+    snapshot->trae_connected = false;
+    snapshot->trae_status = CODEX_STATUS_OFFLINE;
+    snapshot->trae_session_count = 0;
+    snapshot->trae_updated_at = 0;
+    snapshot->trae_perm_enabled = false;
+    snapshot->trae_perm_pending = false;
+    snapshot->trae_perm_id[0] = '\0';
+    snapshot->trae_perm_tool[0] = '\0';
+    snapshot->trae_perm_preview[0] = '\0';
+    snapshot->trae_perm_project[0] = '\0';
+    snapshot->trae_perm_expires = 0;
+    snapshot->trae_perm_queued = 0;
+    memset(snapshot->trae_sessions, 0, sizeof(snapshot->trae_sessions));
+    cJSON *trae = cJSON_GetObjectItemCaseSensitive(root, "trae");
+    if (!cJSON_IsObject(trae)) return;
+
+    snapshot->trae_connected = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(trae, "connected"));
+    cJSON *status = cJSON_GetObjectItemCaseSensitive(trae, "status");
+    snapshot->trae_status = app_state_status_from_string(
+        cJSON_IsString(status) ? status->valuestring : "idle");
+    cJSON *sessions = cJSON_GetObjectItemCaseSensitive(trae, "session_count");
+    if (cJSON_IsNumber(sessions)) {
+        int value = sessions->valueint;
+        if (value < 0) value = 0;
+        if (value > 99) value = 99;
+        snapshot->trae_session_count = (uint8_t)value;
+    }
+    cJSON *updated = cJSON_GetObjectItemCaseSensitive(trae, "updated_at_epoch");
+    snapshot->trae_updated_at = cJSON_IsNumber(updated) ? (time_t)updated->valuedouble : 0;
+
+    cJSON *session_list = cJSON_GetObjectItemCaseSensitive(trae, "sessions");
+    if (cJSON_IsArray(session_list)) {
+        uint8_t index = 0;
+        cJSON *item = NULL;
+        cJSON_ArrayForEach(item, session_list) {
+            if (!cJSON_IsObject(item) || index >= CLAUDECODE_SESSION_MAX) break;
+            claudecode_session_t *session = &snapshot->trae_sessions[index];
+            cJSON *item_status = cJSON_GetObjectItemCaseSensitive(item, "status");
+            session->status = app_state_status_from_string(
+                cJSON_IsString(item_status) ? item_status->valuestring : "idle");
+            copy_json_string(item, "project", session->project, sizeof(session->project));
+            cJSON *item_updated = cJSON_GetObjectItemCaseSensitive(item, "updated_at_epoch");
+            session->updated_at = cJSON_IsNumber(item_updated) ? (time_t)item_updated->valuedouble : 0;
+            index++;
+        }
+    }
+
+    /* 屏上批准队列：pending 只取队首（FIFO，处理完由管理中心自动前进）。 */
+    cJSON *permission = cJSON_GetObjectItemCaseSensitive(trae, "permission");
+    if (!cJSON_IsObject(permission)) return;
+    snapshot->trae_perm_enabled = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(permission, "enabled"));
+    cJSON *pending = cJSON_GetObjectItemCaseSensitive(permission, "pending");
+    if (!cJSON_IsObject(pending)) return;
+    copy_json_string(pending, "id", snapshot->trae_perm_id, CLAUDECODE_PERM_ID_MAX);
+    copy_json_string(pending, "tool", snapshot->trae_perm_tool, CLAUDECODE_PERM_TOOL_MAX);
+    copy_json_string(pending, "preview", snapshot->trae_perm_preview,
+                     CLAUDECODE_PERM_PREVIEW_MAX);
+    copy_json_string(pending, "project", snapshot->trae_perm_project,
+                     CLAUDECODE_PERM_PROJECT_MAX);
+    cJSON *expires = cJSON_GetObjectItemCaseSensitive(pending, "expires_epoch");
+    snapshot->trae_perm_expires = cJSON_IsNumber(expires) ? (time_t)expires->valuedouble : 0;
+    cJSON *queued = cJSON_GetObjectItemCaseSensitive(pending, "queued");
+    snapshot->trae_perm_queued = cJSON_IsNumber(queued) ? (uint8_t)queued->valueint : 0;
+    snapshot->trae_perm_pending = snapshot->trae_perm_id[0] != '\0' &&
+                                  snapshot->trae_perm_expires > 0;
+}
+
 static bool parse_snapshot(const char *json, codex_snapshot_t *snapshot)
 {
     bool ok = false;
@@ -1009,6 +1089,7 @@ static bool parse_snapshot(const char *json, codex_snapshot_t *snapshot)
     copy_bambu_status(root, snapshot);
     copy_zai_status(root, snapshot);
     copy_claudecode_status(root, snapshot);
+    copy_trae_status(root, snapshot);
     copy_weather_status(root, snapshot);
     copy_performance_status(root, snapshot);
     copy_dotii_state(root, snapshot);
@@ -1308,6 +1389,39 @@ static bool send_claudecode_decision(const claudecode_decision_t *decision)
     return error == ESP_OK && status == 200;
 }
 
+static bool send_trae_decision(const claudecode_decision_t *decision)
+{
+    const device_config_values_t *device_config = device_config_get();
+    char url[256];
+    strlcpy(url, device_config->bridge_url, sizeof(url));
+    char *last_slash = strrchr(url, '/');
+    if (last_slash == NULL) return false;
+    strlcpy(last_slash + 1, "trae/decision", sizeof(url) - (size_t)(last_slash + 1 - url));
+    char payload[64];
+    snprintf(payload, sizeof(payload), "{\"id\":\"%s\",\"allow\":%s}",
+             decision->id, decision->allow ? "true" : "false");
+    char response_body[256] = {0};
+    http_body_t response = {.body = response_body, .capacity = sizeof(response_body)};
+    esp_http_client_config_t config = {
+        .url = url, .event_handler = http_event_handler, .user_data = &response,
+        .timeout_ms = 8000, .buffer_size = 512, .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) return false;
+    esp_http_client_set_method(client, HTTP_METHOD_POST);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    if (strlen(device_config->bridge_token) > 0) {
+        esp_http_client_set_header(client, "X-Bridge-Token", device_config->bridge_token);
+    }
+    esp_http_client_set_post_field(client, payload, strlen(payload));
+    esp_err_t error = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    ESP_LOGI(TAG, "TRAE decision %s: %s, HTTP %d",
+             decision->allow ? "allow" : "deny", esp_err_to_name(error), status);
+    return error == ESP_OK && status == 200;
+}
+
 static void publish_offline_state(void)
 {
     if (s_have_snapshot) {
@@ -1381,7 +1495,8 @@ static void bridge_task(void *argument)
             }
             claudecode_decision_t decision;
             while (s_decision_queue != NULL && xQueueReceive(s_decision_queue, &decision, 0) == pdTRUE) {
-                send_claudecode_decision(&decision);
+                if (decision.target == DECISION_TARGET_TRAE) send_trae_decision(&decision);
+                else send_claudecode_decision(&decision);
             }
             if (fetch_snapshot(&s_work_snapshot)) {
                 if (!s_bridge_online) ESP_LOGI(TAG, "Bridge snapshot received");
@@ -1532,6 +1647,30 @@ bool connectivity_claudecode_decision(const char *request_id, bool allow)
     claudecode_decision_t decision;
     strlcpy(decision.id, request_id, sizeof(decision.id));
     decision.allow = allow;
+    decision.target = DECISION_TARGET_CLAUDECODE;
+    if (xQueueSend(s_decision_queue, &decision, 0) != pdTRUE) return false;
+    xEventGroupSetBits(s_events, REFRESH_REQUESTED_BIT);
+    return true;
+}
+
+bool connectivity_trae_decision(const char *request_id, bool allow)
+{
+    if (request_id == NULL || request_id[0] == '\0' ||
+        strlen(request_id) >= CLAUDECODE_PERM_ID_MAX ||
+        strspn(request_id, "0123456789abcdef") != strlen(request_id)) {
+        return false;
+    }
+    const device_config_values_t *device_config = device_config_get();
+    if (device_config->link_mode == DEVICE_LINK_MODE_BLE) {
+        /* 蓝牙精简模式无 Wi-Fi：决策经 SYNC 特征 notify 直接上行。 */
+        ble_bridge_report_decision(request_id, allow);
+        return true;
+    }
+    if (s_decision_queue == NULL) return false;
+    claudecode_decision_t decision;
+    strlcpy(decision.id, request_id, sizeof(decision.id));
+    decision.allow = allow;
+    decision.target = DECISION_TARGET_TRAE;
     if (xQueueSend(s_decision_queue, &decision, 0) != pdTRUE) return false;
     xEventGroupSetBits(s_events, REFRESH_REQUESTED_BIT);
     return true;

@@ -49,6 +49,11 @@
         <span>Claude Code</span>
         <span class="module-meta" id="claudecode-nav-state">读取中</span>
       </button>
+      <button class="module-tab" type="button" data-panel="trae" aria-selected="false">
+        <span class="nav-icon trae-icon" aria-hidden="true"></span>
+        <span>TRAE</span>
+        <span class="module-meta" id="trae-nav-state">读取中</span>
+      </button>
       <button class="module-tab" type="button" data-panel="custom" aria-selected="false">
         <span class="nav-icon custom-icon" aria-hidden="true"></span>
         <span>自定义</span>
@@ -420,6 +425,58 @@
               </label>
             </div>
             <p class="bambu-help">需要先启用事件上报（安装 PermissionRequest hook，要求较新版本的 Claude Code）。开启后权限请求会推送到 Dotii，最长等待 300 秒；超时或未开启时，权限提示照常出现在电脑端，工作流不受影响。拒绝会附带说明发送给 Claude。</p>
+          </article>
+        </section>
+      </section>
+
+      <section class="panel" id="panel-trae" aria-labelledby="trae-heading" hidden>
+        <div class="section-heading">
+          <div>
+            <h2 id="trae-heading">TRAE</h2>
+            <p>通过 TRAE 官方 hooks 上报任务状态：工作中、等待操作、完成或失败。</p>
+          </div>
+        </div>
+        <div class="module-content" id="trae-content">
+          <div class="metric-grid" aria-label="TRAE 概览">
+            <article class="metric primary-metric"><span>任务状态</span><strong id="trae-status">未启用</strong></article>
+            <article class="metric"><span>当前项目</span><strong id="trae-project">--</strong></article>
+            <article class="metric"><span>会话数</span><strong id="trae-session-count">--</strong><small id="trae-updated">等待事件</small></article>
+          </div>
+          <article class="bambu-card trae-sessions-card" id="trae-sessions-card" hidden>
+            <div class="card-heading"><div><h3>活动会话</h3><p>按最近活动排序，最多显示 4 个。</p></div><span class="status-pill" id="trae-connection">尚未连接</span></div>
+            <ul class="claudecode-session-list" id="trae-session-list"></ul>
+          </article>
+          <article class="bambu-card" id="trae-permission-card" hidden>
+            <div class="card-heading"><div><h3>等待批准的权限请求</h3><p>同时显示在 Dotii 屏上；此处也可直接处理。</p></div><span class="status-pill" id="trae-permission-state">等待中</span></div>
+            <ul class="claudecode-session-list" id="trae-permission-list"></ul>
+          </article>
+        </div>
+        <section class="module-preferences" aria-labelledby="trae-preferences-heading">
+          <div class="section-heading">
+            <div><h3 id="trae-preferences-heading">TRAE 设置</h3><p>事件上报写入 TRAE 的 hooks 配置，只包含状态字段，不读取对话内容。</p></div>
+            <label class="module-switch">
+              <span>启用模块</span>
+              <input id="trae-enabled" type="checkbox">
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+            </label>
+          </div>
+          <article class="bambu-card module-preference-card" id="trae-hooks-card">
+            <div class="card-heading"><div><h3>事件上报</h3><p>把 TRAE 的工作状态事件发送到本机管理中心。</p></div><span class="status-pill" id="trae-hooks-state">未配置</span></div>
+            <p class="bambu-help">启用后会在 <code>~/.trae-cn/hooks.json</code> 中添加 hooks：提交输入、工具调用、回合完成和会话开始时通知管理中心。修改前会自动备份为 <code>hooks.json.dotii-backup</code>，原有 hooks 保持不变，可随时停用恢复。</p>
+            <div class="card-actions">
+              <button class="primary-button" id="trae-hooks-install" type="button">启用事件上报</button>
+              <button class="quiet-button" id="trae-hooks-remove" type="button">停用并清理</button>
+            </div>
+          </article>
+          <article class="bambu-card module-preference-card" id="trae-remote-card">
+            <div class="card-heading"><div><h3>屏上批准权限请求</h3><p>在 Dotii 圆屏上直接批准或拒绝 TRAE 的工具调用。</p></div>
+              <label class="module-switch">
+                <span>远程批准</span>
+                <input id="trae-remote" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              </label>
+            </div>
+            <p class="bambu-help">需要先启用事件上报（安装 PreToolUse hook）。开启后工具调用会推送到 Dotii，最长等待 300 秒；超时或未开启时，权限提示照常出现在电脑端，工作流不受影响。拒绝会附带说明发送给 TRAE。注意：如果 TRAE 中某工具设为手动确认模式，即使屏上批准仍会弹本机确认框，建议在 TRAE 中将工具设为自动模式。</p>
           </article>
         </section>
       </section>

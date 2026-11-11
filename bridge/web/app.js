@@ -38,6 +38,7 @@ const state = {
   lastNotionTodos: null,
   ringAutoSaveTimer: null,
   claudecodeBusy: false,
+  traeBusy: false,
   bluetoothModeTouched: false,
   displayDirty: false,
   displaySaving: false,
@@ -1149,6 +1150,131 @@ async function updateClaudecodeRemote(enabled) {
   }
 }
 
+// ---- TRAE 相关函数 ----
+
+function renderTrae(trae = {}, enabled = true) {
+  const online = Boolean(trae.connected);
+  const statusText = !enabled ? "未启用" : online ? (trae.status_text || "--") : "等待事件";
+  const status = byId("trae-status");
+  if (status) {
+    status.textContent = statusText;
+    status.style.color = online ? (CLAUDECODE_STATE_COLORS[trae.status] || "var(--text)") : "var(--muted)";
+  }
+  setText("trae-project", online ? (trae.project || "--") : "--");
+  setText("trae-session-count", online && trae.session_count ? `${trae.session_count} 个` : "--");
+  setText("trae-updated", trae.updated_at_epoch ? `更新于 ${formatTime(trae.updated_at_epoch)}` : "等待事件");
+  const sessions = Array.isArray(trae.sessions) ? trae.sessions : [];
+  const card = byId("trae-sessions-card");
+  if (card) card.hidden = !online || sessions.length === 0;
+  const list = byId("trae-session-list");
+  if (list) {
+    list.innerHTML = sessions.map((item) => `
+      <li class="claudecode-session-item">
+        <span class="claudecode-session-dot" style="background:${CLAUDECODE_STATE_COLORS[item.status] || "var(--muted)"}"></span>
+        <span class="claudecode-session-project">${escapeHtml(item.project || "--")}</span>
+        <span class="claudecode-session-status">${escapeHtml(item.status_text || "--")}</span>
+        <span class="claudecode-session-time">${item.updated_at_epoch ? formatTime(item.updated_at_epoch) : "--"}</span>
+      </li>`).join("");
+  }
+  const connection = byId("trae-connection");
+  if (connection) {
+    connection.textContent = online ? "已连接" : "尚未连接";
+    connection.className = `status-pill ${online ? "online" : ""}`;
+  }
+  const hooksBadge = byId("trae-hooks-state");
+  const hooksInstalled = Boolean(state.overview?.trae_hooks_installed);
+  if (hooksBadge) {
+    hooksBadge.textContent = hooksInstalled ? "已启用" : "未配置";
+    hooksBadge.className = `status-pill ${hooksInstalled ? "online" : ""}`;
+  }
+  setText("trae-nav-state", !enabled ? "已关闭" : online ? (trae.status_text || "在线") : "等待事件");
+
+  const permission = trae.permission || {};
+  const remoteToggle = byId("trae-remote");
+  if (remoteToggle) remoteToggle.checked = Boolean(permission.enabled);
+  const permCard = byId("trae-permission-card");
+  const queue = Array.isArray(permission.queue) ? permission.queue : [];
+  if (permCard) permCard.hidden = queue.length === 0;
+  if (queue.length > 0) {
+    setText("trae-permission-state", `等待中 · ${queue.length} 个`);
+    const list = byId("trae-permission-list");
+    if (list) {
+      list.innerHTML = queue.map((item) => `
+        <li class="claudecode-session-item">
+          <div class="claudecode-permission-info">
+            <strong>${escapeHtml(item.tool || "--")}</strong>
+            <span>${escapeHtml(item.preview || "")}</span>
+            <small>${escapeHtml(item.project || "")}</small>
+          </div>
+          <div class="claudecode-permission-actions">
+            <button class="primary-button" onclick="sendTraeDecision('${item.id}', true)">批准</button>
+            <button class="quiet-button" onclick="sendTraeDecision('${item.id}', false)">拒绝</button>
+          </div>
+        </li>`).join("");
+    }
+  }
+}
+
+async function installTraeHooks(action) {
+  if (state.traeBusy) return;
+  state.traeBusy = true;
+  byId("trae-hooks-install").disabled = true;
+  byId("trae-hooks-remove").disabled = true;
+  try {
+    if (action === "install" && !window.confirm("将在 ~/.trae-cn/hooks.json 中添加 TRAE hooks（自动备份，可随时停用）。继续吗？")) return;
+    const response = await fetch("/api/v1/admin/trae/hooks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    showToast(action === "install" ? "TRAE hooks 已启用" : "TRAE hooks 已移除");
+    await refreshOverview();
+  } catch (error) {
+    showToast(error.message || "操作失败");
+  } finally {
+    state.traeBusy = false;
+    byId("trae-hooks-install").disabled = false;
+    byId("trae-hooks-remove").disabled = false;
+  }
+}
+
+async function sendTraeDecision(id, allow) {
+  try {
+    const response = await fetch("/api/v1/admin/trae/decision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, allow }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (!result.resolved) throw new Error("该请求已超时或已被处理");
+    showToast(allow ? "已批准" : "已拒绝");
+  } catch (error) {
+    showToast(error.message || "决策发送失败");
+  } finally {
+    await refreshOverview();
+  }
+}
+
+async function updateTraeRemote(enabled) {
+  const toggle = byId("trae-remote");
+  try {
+    const response = await fetch("/api/v1/admin/trae/remote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "设置失败");
+    showToast(enabled ? "TRAE 远程批准已开启" : "TRAE 远程批准已关闭");
+  } catch (error) {
+    toggle.checked = !enabled;
+    showToast(error.message || "设置失败");
+  }
+}
+
 async function saveZai(event) {
   event.preventDefault();
   const payload = {
@@ -1264,6 +1390,16 @@ function renderCollectorStatus(snapshot, modules, bridge) {
     rows.push(["Claude Code", "online", null, ["online", `在线 · ${claudecode.session_count || 1} 个会话`]]);
   } else {
     rows.push(["Claude Code", "waiting", null, ["waiting", "等待事件"]]);
+  }
+
+  const traeEnabled = modules.trae?.enabled !== false;
+  const trae = snapshot.trae || {};
+  if (!traeEnabled) {
+    rows.push(["TRAE", "disabled", null, ["disabled", "已关闭"]]);
+  } else if (trae.connected) {
+    rows.push(["TRAE", "online", null, ["online", `在线 · ${trae.session_count || 1} 个会话`]]);
+  } else {
+    rows.push(["TRAE", "waiting", null, ["waiting", "等待事件"]]);
   }
 
   const bleLink = state.overview?.ble_link;
@@ -1912,6 +2048,7 @@ function renderOverview(overview) {
   const bambuEnabled = modules.bambu?.enabled !== false;
   const zaiEnabled = modules.zai?.enabled !== false;
   const claudecodeEnabled = modules.claudecode?.enabled !== false;
+  const traeEnabled = modules.trae?.enabled !== false;
   const dotiiEnabled = modules.dotii?.enabled !== false;
   const weatherEnabled = modules.weather?.enabled === true;
   const performanceEnabled = modules.performance?.enabled === true;
@@ -1965,6 +2102,7 @@ function renderOverview(overview) {
   renderWeather(snapshot.weather || {}, overview.weather_config || {}, weatherEnabled);
   renderPerformance(snapshot.performance || {}, state.performanceConfig || incomingPerformanceConfig, performanceEnabled);
   renderClaudecode(snapshot.claudecode || {}, claudecodeEnabled);
+  renderTrae(snapshot.trae || {}, traeEnabled);
   const incomingDotiiConfig = overview.dotii_config;
   if (!state.dotiiConfigDirty && !state.dotiiConfigSaving && incomingDotiiConfig
       && (!state.dotiiConfig || state.dotiiConfig.revision !== incomingDotiiConfig.revision)) {
@@ -2664,6 +2802,10 @@ byId("claudecode-enabled").addEventListener("change", (event) => updateModule("c
 byId("claudecode-hooks-install").addEventListener("click", () => installClaudecodeHooks("install"));
 byId("claudecode-hooks-remove").addEventListener("click", () => installClaudecodeHooks("remove"));
 byId("claudecode-remote").addEventListener("change", (event) => updateClaudecodeRemote(event.target.checked));
+byId("trae-enabled").addEventListener("change", (event) => updateModule("trae", event.target.checked));
+byId("trae-hooks-install").addEventListener("click", () => installTraeHooks("install"));
+byId("trae-hooks-remove").addEventListener("click", () => installTraeHooks("remove"));
+byId("trae-remote").addEventListener("change", (event) => updateTraeRemote(event.target.checked));
 byId("dotii-enabled").addEventListener("change", (event) => updateModule("dotii", event.target.checked));
 byId("dotii-config-form").addEventListener("submit", saveDotiiConfig);
 byId("dotii-follow-live").addEventListener("click", () => {

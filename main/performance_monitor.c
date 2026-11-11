@@ -8,7 +8,7 @@
 LV_FONT_DECLARE(ui_font_fixed_20);
 LV_FONT_DECLARE(ui_font_detail_20);
 
-#define SAFE_SIZE 358
+#define SCREEN_SIZE 466
 #define GAUGE_COUNT 4
 #define RATE_MIN_SCALE 1024
 #define RATE_MAX_SCALE 1073741824
@@ -208,15 +208,15 @@ static void layout_gauge(performance_gauge_t *gauge, int32_t center_x,
     lv_obj_set_size(gauge->scale, size, size);
     lv_obj_center(gauge->scale);
 
-    bool compact = size <= 160;
-    lv_obj_set_style_line_width(gauge->needle, size >= 300 ? 7 : size >= 200 ? 5 : 3, 0);
-    int32_t hub_size = size >= 300 ? 22 : size >= 200 ? 16 : 11;
+    bool compact = size <= 200;
+    lv_obj_set_style_line_width(gauge->needle, size >= 300 ? 10 : size >= 200 ? 5 : 3, 0);
+    int32_t hub_size = size >= 300 ? 30 : size >= 200 ? 16 : 11;
     lv_obj_set_size(gauge->hub, hub_size, hub_size);
     lv_obj_center(gauge->hub);
 
     lv_obj_set_width(gauge->title, size - 12);
     lv_obj_set_style_text_align(gauge->title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_transform_scale(gauge->title, compact ? 200 : 256, 0);
+    lv_obj_set_style_transform_scale(gauge->title, size >= 300 ? 384 : compact ? 200 : 256, 0);
     lv_obj_set_style_transform_pivot_x(gauge->title, (size - 12) / 2, 0);
     lv_obj_set_style_transform_pivot_y(gauge->title, 10, 0);
     lv_obj_align(gauge->title, LV_ALIGN_TOP_MID, 0, size * 17 / 100);
@@ -225,6 +225,9 @@ static void layout_gauge(performance_gauge_t *gauge, int32_t center_x,
     lv_obj_set_style_text_align(gauge->value, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(gauge->value,
                                size >= 200 ? &lv_font_montserrat_28 : &lv_font_montserrat_22, 0);
+    lv_obj_set_style_transform_scale(gauge->value, size >= 300 ? 384 : 256, 0);
+    lv_obj_set_style_transform_pivot_x(gauge->value, (size - 12) / 2, 0);
+    lv_obj_set_style_transform_pivot_y(gauge->value, 16, 0);
     lv_obj_align(gauge->value, LV_ALIGN_CENTER, 0, size * 13 / 100);
 
     lv_obj_t *details[2] = {gauge->detail_first, gauge->detail_second};
@@ -266,19 +269,19 @@ static void apply_layout(const codex_snapshot_t *snapshot)
         if (mask & (1U << index)) slots[count++] = index;
     }
 
-    int32_t size = count == 1 ? SAFE_SIZE : count == 2 ? 176 : 158;
+    int32_t size = count == 1 ? SCREEN_SIZE : count == 2 ? 224 : 200;
     for (uint8_t slot = 0; slot < count; ++slot) {
         int32_t center_x;
         int32_t center_y;
         if (count == 1) {
-            center_x = SAFE_SIZE / 2;
-            center_y = SAFE_SIZE / 2;
+            center_x = SCREEN_SIZE / 2;
+            center_y = SCREEN_SIZE / 2;
         } else if (count == 2) {
-            center_x = slot == 0 ? 90 : 268;
-            center_y = SAFE_SIZE / 2;
+            center_x = slot == 0 ? 121 : 345;
+            center_y = SCREEN_SIZE / 2;
         } else {
-            center_x = count == 3 && slot == 2 ? SAFE_SIZE / 2 : (slot % 2 == 0 ? 90 : 268);
-            center_y = slot < 2 ? 82 : 242;
+            center_x = count == 3 && slot == 2 ? SCREEN_SIZE / 2 : (slot % 2 == 0 ? 139 : 327);
+            center_y = slot < 2 ? 139 : 327;
         }
         performance_gauge_t *gauge = &s_gauges[slots[slot]];
         layout_gauge(gauge, center_x, center_y, size);
@@ -348,7 +351,7 @@ static void build_gauge(performance_gauge_t *gauge, gauge_type_t type,
     set_hidden(gauge->detail_first, percent);
     set_hidden(gauge->detail_second, percent);
 
-    layout_gauge(gauge, SAFE_SIZE / 2, SAFE_SIZE / 2, 140);
+    layout_gauge(gauge, SCREEN_SIZE / 2, SCREEN_SIZE / 2, 140);
     update_axis_labels(gauge);
     set_hidden(gauge->container, true);
 }
@@ -365,7 +368,7 @@ lv_obj_t *performance_monitor_build(void)
 
     s_safe = lv_obj_create(s_screen);
     lv_obj_remove_style_all(s_safe);
-    lv_obj_set_size(s_safe, SAFE_SIZE, SAFE_SIZE);
+    lv_obj_set_size(s_safe, SCREEN_SIZE, SCREEN_SIZE);
     lv_obj_center(s_safe);
     lv_obj_remove_flag(s_safe, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 

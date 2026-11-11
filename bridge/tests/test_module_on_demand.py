@@ -130,7 +130,7 @@ class ModuleOnDemandTests(unittest.TestCase):
     def test_first_run_defaults_keep_codex_and_bambu_off(self):
         self.assertEqual(
             validate_module_config(None),
-            {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True, "weather": False, "performance": False},
+            {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False},
         )
 
     def test_first_run_defaults_enable_custom_and_dotii_pages(self):

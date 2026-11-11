@@ -43,6 +43,11 @@ from claudecode_client import (
     hooks_installed,
     update_hooks,
 )
+from trae_client import (
+    TraeMonitor,
+    hooks_installed as trae_hooks_installed,
+    update_hooks as trae_update_hooks,
+)
 from bluetooth_bridge import BleLinkService, BluetoothBridge
 from firmware_flasher import FirmwareFlasher
 from platforms import current_platform
@@ -91,7 +96,7 @@ CUSTOM_DEFAULTS = {
     "ring_start": "#F2C66D",
     "ring_end": "#5DA9FF",
 }
-MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "dotii": True, "weather": False, "performance": False}
+MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False}
 
 
 def resolve_ffmpeg(runtime_folder: Path) -> str | None:
@@ -118,6 +123,7 @@ DOTII_BUSINESS_EXPRESSION_IDS = (
 DOTII_STATE_GROUPS = (
     {"id": "codex", "label": "Codex 状态"},
     {"id": "claudecode", "label": "Claude Code 状态"},
+    {"id": "trae", "label": "TRAE 状态"},
     {"id": "bambu", "label": "Bambu 状态"},
 )
 DOTII_FIXED_STATE_DEFINITIONS = (
@@ -136,6 +142,10 @@ DOTII_BUSINESS_STATE_DEFINITIONS = (
     {"id": "claudecode_working", "label": "工作中", "group": "claudecode"},
     {"id": "claudecode_completed", "label": "任务完成", "group": "claudecode"},
     {"id": "claudecode_failure", "label": "失败或异常", "group": "claudecode"},
+    {"id": "trae_waiting_user", "label": "等待操作", "group": "trae"},
+    {"id": "trae_working", "label": "工作中", "group": "trae"},
+    {"id": "trae_completed", "label": "任务完成", "group": "trae"},
+    {"id": "trae_failure", "label": "失败或异常", "group": "trae"},
     {"id": "bambu_paused", "label": "已暂停", "group": "bambu"},
     {"id": "bambu_printing", "label": "打印中", "group": "bambu"},
     {"id": "bambu_completed", "label": "打印完成", "group": "bambu"},
@@ -157,10 +167,10 @@ DOTII_LEGACY_STATE_EXPANSIONS = {
     "failure": ("codex_failure", "bambu_failure"),
 }
 DOTII_DEFAULT_BUSINESS_ASSIGNMENTS = {
-    "curious": ("codex_waiting_user", "claudecode_waiting_user", "bambu_paused"),
-    "working": ("codex_working", "claudecode_working", "bambu_printing"),
-    "complete": ("codex_completed", "claudecode_completed", "bambu_completed"),
-    "failure": ("codex_failure", "claudecode_failure", "bambu_failure"),
+    "curious": ("codex_waiting_user", "claudecode_waiting_user", "trae_waiting_user", "bambu_paused"),
+    "working": ("codex_working", "claudecode_working", "trae_working", "bambu_printing"),
+    "complete": ("codex_completed", "claudecode_completed", "trae_completed", "bambu_completed"),
+    "failure": ("codex_failure", "claudecode_failure", "trae_failure", "bambu_failure"),
 }
 DOTII_DEFAULT_BUSINESS_EXPRESSION = {
     state_id: expression_id
@@ -621,7 +631,8 @@ def _dotii_assignment_for_state(config: dict[str, Any], state_id: str) -> tuple[
 
 def dotii_state(snapshot: dict[str, Any], bambu: dict[str, Any], enabled: bool,
                 config: dict[str, Any] | None = None,
-                claudecode: dict[str, Any] | None = None) -> dict[str, Any]:
+                claudecode: dict[str, Any] | None = None,
+                trae: dict[str, Any] | None = None) -> dict[str, Any]:
     """Resolve the device companion expression from public module state only."""
     config = validate_dotii_config(config)
     task = snapshot.get("codex", {}).get("task", {})
@@ -633,35 +644,50 @@ def dotii_state(snapshot: dict[str, Any], bambu: dict[str, Any], enabled: bool,
     bambu_connected = bool(bambu.get("configured")) and bool(bambu.get("connected"))
     claudecode_online = bool(claudecode or {}) and bool(claudecode.get("connected"))
     claudecode_status = str((claudecode or {}).get("status") or "idle")
+    trae_online = bool(trae or {}) and bool(trae.get("connected"))
+    trae_status = str((trae or {}).get("status") or "idle")
     # 屏上批准队列非空即等待用户——权限请求优先于一般等待事件。
     claudecode_permission_pending = bool(
         claudecode_online and ((claudecode or {}).get("permission") or {}).get("pending")
     )
+    trae_permission_pending = bool(
+        trae_online and ((trae or {}).get("permission") or {}).get("pending")
+    )
     if claudecode_permission_pending:
         claudecode_status = "waiting_user"
+    if trae_permission_pending:
+        trae_status = "waiting_user"
 
     if codex_status == "failed":
         state_id, reason = "codex_failure", "Codex 任务需要处理"
     elif claudecode_online and claudecode_status == "failed":
         state_id, reason = "claudecode_failure", "Claude Code 任务需要处理"
+    elif trae_online and trae_status == "failed":
+        state_id, reason = "trae_failure", "TRAE 任务需要处理"
     elif bambu_connected and bambu_status == "fault":
         state_id, reason = "bambu_failure", "Bambu 打印机需要处理"
     elif claudecode_permission_pending:
         # 权限等待有时限且需要用户在设备上操作，排在一切常态（working/
         # printing/offline）之前，否则屏上批准形同虚设。
         state_id, reason = "claudecode_waiting_user", "Claude Code 等待你的批准"
+    elif trae_permission_pending:
+        state_id, reason = "trae_waiting_user", "TRAE 等待你的批准"
     elif codex_status == "offline":
         state_id, reason = "connecting", "正在等待管理中心数据"
     elif codex_status == "working":
         state_id, reason = "codex_working", "Codex 正在工作"
     elif claudecode_online and claudecode_status == "working":
         state_id, reason = "claudecode_working", "Claude Code 正在工作"
+    elif trae_online and trae_status == "working":
+        state_id, reason = "trae_working", "TRAE 正在工作"
     elif bambu_connected and bambu_status in {"preparing", "printing", "cancelling"}:
         state_id, reason = "bambu_printing", "Bambu 正在打印"
     elif codex_status == "completed":
         state_id, reason = "codex_completed", "Codex 任务已经完成"
     elif claudecode_online and claudecode_status == "completed":
         state_id, reason = "claudecode_completed", "Claude Code 任务已经完成"
+    elif trae_online and trae_status == "completed":
+        state_id, reason = "trae_completed", "TRAE 任务已经完成"
     elif bambu_connected and bambu_status == "completed":
         state_id, reason = "bambu_completed", "Bambu 打印已经完成"
     elif codex_status == "waiting_user":
@@ -670,6 +696,11 @@ def dotii_state(snapshot: dict[str, Any], bambu: dict[str, Any], enabled: bool,
         state_id, reason = "claudecode_waiting_user", (
             "Claude Code 等待你的批准" if claudecode_permission_pending
             else "Claude Code 正在等待你的操作"
+        )
+    elif trae_online and trae_status == "waiting_user":
+        state_id, reason = "trae_waiting_user", (
+            "TRAE 等待你的批准" if trae_permission_pending
+            else "TRAE 正在等待你的操作"
         )
     elif bambu_connected and bambu_status == "paused":
         state_id, reason = "bambu_paused", "Bambu 打印已暂停"
@@ -1285,6 +1316,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "claudecode_hooks_installed": hooks_installed(
                 Path.home() / ".claude" / "settings.json"
             ),
+            "trae_hooks_installed": trae_hooks_installed(
+                Path.home() / ".trae-cn" / "hooks.json"
+            ),
             "dotii_config": self.bridge.dotii.read(),
             "display_config": self.bridge.display.read(),
             "bambu_config": self.bridge.bambu_config.public(),
@@ -1301,6 +1335,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 {"id": "zai", "name": "Z.ai", "enabled": snapshot["modules"]["zai"], "available": True, "locked": False},
                 {"id": "notion", "name": "Notion", "enabled": snapshot["modules"].get("notion", False), "available": True, "locked": False},
                 {"id": "claudecode", "name": "Claude Code", "enabled": snapshot["modules"]["claudecode"], "available": True, "locked": False},
+                {"id": "trae", "name": "TRAE", "enabled": snapshot["modules"].get("trae", False), "available": True, "locked": False},
                 {"id": "custom", "name": "自定义", "enabled": snapshot["custom"]["enabled"], "available": True, "locked": False},
                 {"id": "dotii", "name": "Dotii", "enabled": snapshot["modules"]["dotii"], "available": True, "locked": False},
                 {"id": "weather", "name": "窗外小世界", "enabled": snapshot["modules"].get("weather", False), "available": True, "locked": False},
@@ -1635,6 +1670,104 @@ class BridgeHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
+        # ---- TRAE 路由 ----
+        if path == "/api/v1/admin/trae/event":
+            if self._deny_nonlocal():
+                return
+            try:
+                payload = self._read_admin_action()
+                self.bridge.trae.record_event(payload)
+                # 用户已在电脑端处理提示：PostToolUse 说明该工具已放行执行，
+                # 撤销屏上同会话同工具的权限等待。
+                if str(payload.get("hook_event_name") or "") == "PostToolUse":
+                    self.bridge.trae_permission.abandon_for_session_tool(
+                        str(payload.get("session_id") or ""),
+                        str(payload.get("tool_name") or ""),
+                    )
+                self._send_json(HTTPStatus.OK, {"ok": True})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        if path == "/api/v1/admin/trae/hooks":
+            if self._deny_nonlocal():
+                return
+            try:
+                payload = self._read_admin_action()
+                action = payload.get("action", "install")
+                if action not in {"install", "remove"}:
+                    raise ValueError("action 必须是 install 或 remove")
+                result = trae_update_hooks(
+                    Path.home() / ".trae-cn" / "hooks.json",
+                    self.bridge.server_port,
+                    action,
+                )
+                result["trae"] = self.bridge.trae.snapshot(
+                    self.bridge.modules.read().get("trae", False)
+                )
+                self._send_json(HTTPStatus.OK, result)
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        if path == "/api/v1/admin/trae/permission":
+            # PreToolUse hook 的决策端点：hold 响应等待 Dotii/管理页
+            # 决策。Write 等工具的 tool_input 会超过常规 MAX_BODY，单独放宽。
+            if self._deny_nonlocal():
+                return
+            try:
+                content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+                if content_type != "application/json":
+                    raise ValueError("permission hook requires application/json")
+                raw = self._read_bytes(PERMISSION_BODY_MAX)
+                payload = json.loads(raw.decode("utf-8"))
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                return
+            decision = self.bridge.trae_permission.submit_and_wait(payload)
+            if decision is None:
+                # 模式关闭或超时：空体让 TRAE 照常弹本机权限提示。
+                self._send_bytes(HTTPStatus.OK, b"", "application/json")
+                return
+            # TRAE PreToolUse 返回格式与 Claude Code PermissionRequest 不同
+            self._send_json(HTTPStatus.OK, {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": decision["behavior"],
+                    "permissionDecisionReason": "已在 Dotii 上拒绝" if decision["behavior"] == "deny" else "",
+                }
+            })
+            return
+        if path in {"/api/v1/admin/trae/decision", "/api/v1/trae/decision"}:
+            if path.startswith("/api/v1/admin/"):
+                if self._deny_nonlocal():
+                    return
+            elif not self._authorized():
+                self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "invalid bridge token"})
+                return
+            try:
+                payload = self._read_admin_action()
+                request_id = payload.get("id")
+                allow = payload.get("allow")
+                if not isinstance(request_id, str) or not request_id or not isinstance(allow, bool):
+                    raise ValueError("需要字符串 id 与布尔 allow")
+                resolved = self.bridge.trae_permission.resolve(request_id, allow)
+                self._send_json(HTTPStatus.OK, {"ok": True, "resolved": resolved})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        if path == "/api/v1/admin/trae/remote":
+            if self._deny_nonlocal():
+                return
+            try:
+                payload = self._read_admin_action()
+                enabled = payload.get("enabled")
+                if not isinstance(enabled, bool):
+                    raise ValueError("enabled 必须是布尔值")
+                self.bridge.trae_config.write({"remote_approve_enabled": enabled})
+                self.bridge.trae_permission.set_mode(enabled)
+                self._send_json(HTTPStatus.OK, {"ok": True, "remote_approve_enabled": enabled})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
         if path == "/api/v1/admin/bambu/refresh":
             if self._deny_nonlocal():
                 return
@@ -1743,6 +1876,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     self.bridge.notion.set_enabled(enabled)
                 elif module_id == "claudecode":
                     self.bridge.claudecode.set_enabled(enabled)
+                elif module_id == "trae":
+                    self.bridge.trae.set_enabled(enabled)
                 elif module_id == "weather":
                     self.bridge.weather.set_enabled(enabled)
                 self._send_json(HTTPStatus.OK, {"ok": True, "modules": saved})
@@ -1833,6 +1968,9 @@ class BridgeServer(ThreadingHTTPServer):
         claudecode: ClaudeCodeMonitor,
         claudecode_permission: PermissionBroker,
         claudecode_config: ClaudeCodeConfigStore,
+        trae: TraeMonitor,
+        trae_permission: PermissionBroker,
+        trae_config: ClaudeCodeConfigStore,
         bluetooth: BluetoothBridge,
         ble_link: BleLinkService,
         firmware: FirmwareFlasher,
@@ -1866,6 +2004,9 @@ class BridgeServer(ThreadingHTTPServer):
         self.claudecode = claudecode
         self.claudecode_permission = claudecode_permission
         self.claudecode_config = claudecode_config
+        self.trae = trae
+        self.trae_permission = trae_permission
+        self.trae_config = trae_config
         self.bluetooth = bluetooth
         self.ble_link = ble_link
         self.firmware = firmware
@@ -1889,11 +2030,14 @@ class BridgeServer(ThreadingHTTPServer):
         snapshot["performance"] = self.performance.snapshot()
         snapshot["claudecode"] = self.claudecode.snapshot(self.modules.read()["claudecode"])
         snapshot["claudecode"]["permission"] = self.claudecode_permission.snapshot()
+        snapshot["trae"] = self.trae.snapshot(self.modules.read().get("trae", False))
+        snapshot["trae"]["permission"] = self.trae_permission.snapshot()
         modules = self.modules.read()
         snapshot["modules"] = {**modules, "custom": custom["enabled"]}
         snapshot["dotii"] = dotii_state(
             snapshot, snapshot["bambu"], modules["dotii"], self.dotii.read(),
             claudecode=snapshot["claudecode"],
+            trae=snapshot["trae"],
         )
         snapshot["display"] = self.display.read()
         return snapshot
@@ -1969,6 +2113,11 @@ def main() -> None:
         module_enabled=lambda: modules.read()["claudecode"])
     claudecode_config = ClaudeCodeConfigStore(writable_root / "claudecode.json")
     claudecode_permission.set_mode(claudecode_config.read()["remote_approve_enabled"])
+    trae = TraeMonitor()
+    trae_permission = PermissionBroker(
+        module_enabled=lambda: modules.read().get("trae", False))
+    trae_config = ClaudeCodeConfigStore(writable_root / "trae.json")
+    trae_permission.set_mode(trae_config.read()["remote_approve_enabled"])
     bluetooth = BluetoothBridge(writable_root)
     bluetooth.start()
     server_ref: dict[str, Any] = {}
@@ -1979,8 +2128,13 @@ def main() -> None:
             return "{}"
         return json.dumps(instance.snapshot(), ensure_ascii=False, separators=(",", ":"))
 
+    def _resolve_ble_decision(request_id: str, allow: bool) -> bool:
+        # SYNC 决策只携带随机请求 ID；两个模块的 ID 空间独立，未命中即回退。
+        return (claudecode_permission.resolve(request_id, allow) or
+                trae_permission.resolve(request_id, allow))
+
     ble_link = BleLinkService(bluetooth, writable_root, _snapshot_json,
-                              on_decision=claudecode_permission.resolve)
+                              on_decision=_resolve_ble_decision)
     # BLE 推送长连接活跃时，状态探测 monitor 跳过（设备只接受一个中心连接）。
     bluetooth.link_active_probe = lambda: bool(ble_link.snapshot().get("connected"))
     bluetooth.on_configured = lambda address, mode: ble_link.set_binding(
@@ -1993,6 +2147,8 @@ def main() -> None:
                           weather_config, weather, performance_config, performance,
                           claudecode, claudecode_permission,
                           claudecode_config,
+                          trae, trae_permission,
+                          trae_config,
                           bluetooth, ble_link, firmware, writable_root, application_root(),
                           arguments.codex_command, arguments.parent_pid)
     server_ref["server"] = server

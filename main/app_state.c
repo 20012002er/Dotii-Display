@@ -103,7 +103,7 @@ void app_state_publish(const codex_snapshot_t *snapshot)
 }
 
 /* 快照里是否有真实数据：preview_data 只说明 Codex 段是种子，服务端
-   实时注入的 zai/bambu/claudecode 模块不受影响——任一在线即有真数据。 */
+   实时注入的 zai/bambu/claudecode/trae 模块不受影响——任一在线即有真数据。 */
 bool app_state_has_real_data(const codex_snapshot_t *snapshot)
 {
     if (snapshot == NULL || !snapshot->valid) return false;
@@ -112,7 +112,7 @@ bool app_state_has_real_data(const codex_snapshot_t *snapshot)
                               snapshot->performance_enabled && snapshot->performance_connected &&
                               !snapshot->performance_stale;
     return snapshot->zai_connected || snapshot->bambu_connected ||
-           snapshot->claudecode_connected || performance_online;
+           snapshot->claudecode_connected || snapshot->trae_connected || performance_online;
 }
 
 const char *app_state_bambu_status_text(bambu_status_t status)
