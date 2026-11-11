@@ -68,10 +68,10 @@ def hook_command(port: int) -> str:
 
 def permission_hook_command(port: int) -> str:
     """PreToolUse 决策 hook：同裸 curl 形态，但服务端会 hold 响应
-    等待 Dotii 上的批准（上限 300s），curl 超时留 10s 余量。管理中心
+    等待 Dotii 上的批准（上限 30s），curl 超时留 5s 余量。管理中心
     不可达时静默退出 0——空输出让 TRAE 照常弹本机权限提示。"""
     return (
-        f"curl -s -m 310 -X POST http://127.0.0.1:{port}{PERMISSION_URL_PATH} "
+        f"curl -s -m 35 -X POST http://127.0.0.1:{port}{PERMISSION_URL_PATH} "
         f"-H \"Content-Type: application/json\" --data-binary @- || exit 0"
     )
 
@@ -231,7 +231,7 @@ def update_hooks(path: Path, port: int, action: str = "install") -> dict[str, An
             if len(ours) == 1 and _our_command(ours[0]) == event_command:
                 continue
             remaining = [entry for entry in entries if not _is_our_entry(entry)]
-            hooks[event] = remaining + [{"matcher": "", "hooks": [{"type": "command", "command": event_command, "timeout": 310 if event == "PreToolUse" else 30}]}]
+            hooks[event] = remaining + [{"matcher": "", "hooks": [{"type": "command", "command": event_command, "timeout": 35 if event == "PreToolUse" else 30}]}]
             changed.append(event)
         else:
             if not ours:

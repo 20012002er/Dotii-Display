@@ -2081,6 +2081,7 @@ function renderOverview(overview) {
   if (!state.moduleSaving.bambu) byId("bambu-enabled").checked = bambuEnabled;
   if (!state.moduleSaving.zai) byId("zai-enabled").checked = zaiEnabled;
   if (!state.moduleSaving.claudecode) byId("claudecode-enabled").checked = claudecodeEnabled;
+  if (!state.moduleSaving.trae) byId("trae-enabled").checked = traeEnabled;
   if (!state.moduleSaving.weather) byId("weather-enabled").checked = weatherEnabled;
   if (!state.moduleSaving.performance) byId("performance-enabled").checked = performanceEnabled;
   const incomingPerformanceConfig = normalizePerformanceConfig(overview.performance_config || {}, snapshot.performance || {});
@@ -2093,6 +2094,7 @@ function renderOverview(overview) {
   byId("bambu-content").hidden = !bambuEnabled;
   byId("zai-content").hidden = !zaiEnabled;
   byId("claudecode-content").hidden = !claudecodeEnabled;
+  byId("trae-content").hidden = !traeEnabled;
   setText("codex-nav-state", codexEnabled ? (bridge.collector_state === "online" ? "在线" : bridge.collector_state === "error" ? "异常" : "连接中") : "已关闭");
   renderBambu(snapshot.bambu || {}, overview.bambu_config || {}, bambuEnabled);
   renderZai(snapshot.zai || {}, overview.zai_config || {}, zaiEnabled);
