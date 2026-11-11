@@ -110,26 +110,27 @@ h1 { font-size: 17px; line-height: 1.2; letter-spacing: -.01em; }
 .module-nav {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 6px;
-  padding: 18px 0;
-  overflow-x: auto;
+  padding: 14px 0;
   border-bottom: 1px solid var(--line);
 }
 
 .module-tab {
   flex: 0 0 auto;
-  min-height: 46px;
-  gap: 9px;
-  padding: 0 14px;
+  min-height: 40px;
+  gap: 7px;
+  padding: 0 12px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted-strong);
   cursor: pointer;
+  font-size: 13px;
 }
 .module-tab:hover { background: var(--surface); }
 .module-tab.active { border-color: var(--line-strong); background: var(--surface-raised); color: var(--text); }
-.module-tab img, .nav-icon { width: 22px; height: 22px; }
+.module-tab img, .nav-icon { width: 20px; height: 20px; }
 .module-tab img { object-fit: contain; filter: brightness(1.4); }
 .nav-icon {
   flex: 0 0 auto;
@@ -151,6 +152,11 @@ h1 { font-size: 17px; line-height: 1.2; letter-spacing: -.01em; }
   color: #D97757;
   -webkit-mask-image: url("/assets/claudecode.svg");
   mask-image: url("/assets/claudecode.svg");
+}
+.trae-icon {
+  color: #00D4AA;
+  -webkit-mask-image: url("/assets/trae.svg");
+  mask-image: url("/assets/trae.svg");
 }
 .claudecode-session-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
 .collector-block { display: grid; gap: 8px; }
@@ -977,8 +983,8 @@ button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
   .app-header { align-items: flex-start; padding: 18px 0; }
   .header-actions { align-items: flex-end; flex-direction: column; }
   .bridge-state { min-height: 32px; }
-  .module-nav { align-items: stretch; }
-  .module-tab { padding: 0 11px; }
+  .module-nav { align-items: stretch; gap: 4px; }
+  .module-tab { padding: 0 10px; min-height: 36px; font-size: 12px; }
   .module-meta { display: none; }
   .section-heading { flex-direction: column; }
   .module-preferences-heading { flex-direction: column; gap: 16px; }
