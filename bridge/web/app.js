@@ -67,6 +67,14 @@ const setText = (id, value) => {
   const target = byId(id);
   if (target) target.textContent = value;
 };
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 const setMarkdown = (id, value) => {
   const target = byId(id);
   const renderer = window.StateDisplayMarkdown?.renderMarkdown;
