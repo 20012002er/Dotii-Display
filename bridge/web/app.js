@@ -1423,6 +1423,22 @@ function renderCollectorStatus(snapshot, modules, bridge) {
     rows.push(["TRAE", "waiting", null, ["waiting", "等待事件"]]);
   }
 
+  const turntableEnabled = modules.turntable?.enabled === true;
+  const turntable = snapshot.turntable || {};
+  if (!turntableEnabled) {
+    rows.push(["唱片台", "disabled", null, ["disabled", "已关闭"]]);
+  } else if (turntable.connected && !turntable.stale) {
+    rows.push(["唱片台", "online", null, ["online", "已连接"]]);
+  } else if (turntable.playback_state === "not_running") {
+    rows.push(["唱片台", "waiting", null, ["waiting", "Spotify 未运行"]]);
+  } else if (turntable.stale) {
+    rows.push(["唱片台", "error", null, ["error", "数据过期"]]);
+  } else if (turntable.playback_state === "error") {
+    rows.push(["唱片台", "error", null, ["error", "采集异常"]]);
+  } else {
+    rows.push(["唱片台", "waiting", null, ["waiting", "正在连接"]]);
+  }
+
   const bleLink = state.overview?.ble_link;
   if (bleLink?.enabled) {
     rows.push(bleLink.connected

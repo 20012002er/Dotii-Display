@@ -213,6 +213,13 @@ process.stdout.write(JSON.stringify(result));
             backend,
         )
 
+    def test_settings_collector_status_includes_turntable(self):
+        script = (BRIDGE / "web" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("const turntable = snapshot.turntable || {};", script)
+        self.assertIn('rows.push(["唱片台", "online", null, ["online", "已连接"]]);', script)
+        self.assertIn('["waiting", "Spotify 未运行"]', script)
+
     def test_dotii_disabled_content_is_hidden_even_with_grid_layout(self):
         styles = (BRIDGE / "web" / "styles.css").read_text(encoding="utf-8")
         script = (BRIDGE / "web" / "app.js").read_text(encoding="utf-8")
