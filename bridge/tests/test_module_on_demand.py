@@ -205,6 +205,14 @@ process.stdout.write(JSON.stringify(result));
             refs.update(re.findall(pattern, script))
         self.assertEqual(refs - ids, set())
 
+    def test_overview_exposes_turntable_module_state(self):
+        backend = (BRIDGE / "codex_bridge.py").read_text(encoding="utf-8")
+
+        self.assertIn(
+            '{"id": "turntable", "name": "唱片台", "enabled": snapshot["modules"].get("turntable", False)',
+            backend,
+        )
+
     def test_dotii_disabled_content_is_hidden_even_with_grid_layout(self):
         styles = (BRIDGE / "web" / "styles.css").read_text(encoding="utf-8")
         script = (BRIDGE / "web" / "app.js").read_text(encoding="utf-8")

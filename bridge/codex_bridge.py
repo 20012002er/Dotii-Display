@@ -1353,6 +1353,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 {"id": "dotii", "name": "Dotii", "enabled": snapshot["modules"]["dotii"], "available": True, "locked": False},
                 {"id": "weather", "name": "窗外小世界", "enabled": snapshot["modules"].get("weather", False), "available": True, "locked": False},
                 {"id": "performance", "name": "性能监控", "enabled": snapshot["modules"].get("performance", False), "available": True, "locked": False},
+                {"id": "turntable", "name": "唱片台", "enabled": snapshot["modules"].get("turntable", False), "available": True, "locked": False},
             ],
         }
 
