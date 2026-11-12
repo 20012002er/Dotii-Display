@@ -56,6 +56,7 @@ static uint8_t *s_bambu_camera_buffers[2];
 static uint32_t s_bambu_camera_revisions[2];
 static int s_bambu_camera_active = -1;
 static QueueHandle_t s_bambu_command_queue;
+static QueueHandle_t s_turntable_command_queue;
 static QueueHandle_t s_decision_queue;
 static codex_task_detail_t *s_work_tasks;
 static size_t s_work_task_count;
@@ -77,6 +78,11 @@ typedef struct {
     bool allow;
     decision_target_t target;
 } claudecode_decision_t;
+
+typedef struct {
+    char action[12];
+    uint32_t position_ms;
+} turntable_command_t;
 
 typedef struct {
     char *body;
@@ -485,6 +491,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     snapshot->trae_enabled = false;
     snapshot->weather_enabled = false;
     snapshot->performance_enabled = false;
+    snapshot->turntable_enabled = false;
     cJSON *modules = cJSON_GetObjectItemCaseSensitive(root, "modules");
     if (!cJSON_IsObject(modules)) return;
 
@@ -496,6 +503,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     cJSON *trae = cJSON_GetObjectItemCaseSensitive(modules, "trae");
     cJSON *weather = cJSON_GetObjectItemCaseSensitive(modules, "weather");
     cJSON *performance = cJSON_GetObjectItemCaseSensitive(modules, "performance");
+    cJSON *turntable = cJSON_GetObjectItemCaseSensitive(modules, "turntable");
     if (cJSON_IsBool(codex)) snapshot->codex_enabled = cJSON_IsTrue(codex);
     if (cJSON_IsBool(bambu)) snapshot->bambu_enabled = cJSON_IsTrue(bambu);
     if (cJSON_IsBool(dotii)) snapshot->dotii_enabled = cJSON_IsTrue(dotii);
@@ -504,6 +512,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     if (cJSON_IsBool(trae)) snapshot->trae_enabled = cJSON_IsTrue(trae);
     if (cJSON_IsBool(weather)) snapshot->weather_enabled = cJSON_IsTrue(weather);
     if (cJSON_IsBool(performance)) snapshot->performance_enabled = cJSON_IsTrue(performance);
+    if (cJSON_IsBool(turntable)) snapshot->turntable_enabled = cJSON_IsTrue(turntable);
 }
 
 static window_weather_t weather_condition_from_string(const char *condition)
@@ -621,6 +630,77 @@ static void copy_performance_status(cJSON *root, codex_snapshot_t *snapshot)
             performance_number(network, "tx_bytes_per_sec", &second_valid);
         snapshot->performance_network_available = first_valid && second_valid && cJSON_IsTrue(
             cJSON_GetObjectItemCaseSensitive(network, "available"));
+    }
+}
+
+static turntable_playback_state_t turntable_playback_from_string(const char *state)
+{
+    if (state == NULL) return TURNTABLE_PLAYBACK_NOT_RUNNING;
+    if (strcmp(state, "playing") == 0) return TURNTABLE_PLAYBACK_PLAYING;
+    if (strcmp(state, "paused") == 0) return TURNTABLE_PLAYBACK_PAUSED;
+    if (strcmp(state, "stopped") == 0) return TURNTABLE_PLAYBACK_STOPPED;
+    if (strcmp(state, "error") == 0) return TURNTABLE_PLAYBACK_ERROR;
+    return TURNTABLE_PLAYBACK_NOT_RUNNING;
+}
+
+static void copy_turntable_status(cJSON *root, codex_snapshot_t *snapshot)
+{
+    snapshot->turntable_playback_state = TURNTABLE_PLAYBACK_NOT_RUNNING;
+    snapshot->turntable_palette[0] = 0x101C1A;
+    snapshot->turntable_palette[1] = 0x5DA9FF;
+    snapshot->turntable_palette[2] = 0x28453D;
+    cJSON *turntable = cJSON_GetObjectItemCaseSensitive(root, "turntable");
+    if (!cJSON_IsObject(turntable)) return;
+
+    snapshot->turntable_connected = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(turntable, "connected"));
+    snapshot->turntable_stale = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(turntable, "stale"));
+    snapshot->turntable_spotify_running = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(turntable, "spotify_running"));
+    cJSON *state = cJSON_GetObjectItemCaseSensitive(turntable, "playback_state");
+    snapshot->turntable_playback_state = turntable_playback_from_string(
+        cJSON_IsString(state) ? state->valuestring : NULL);
+    copy_json_string(turntable, "title", snapshot->turntable_title,
+                     sizeof(snapshot->turntable_title));
+    copy_json_string(turntable, "artist", snapshot->turntable_artist,
+                     sizeof(snapshot->turntable_artist));
+    copy_json_string(turntable, "album", snapshot->turntable_album,
+                     sizeof(snapshot->turntable_album));
+    copy_json_string(turntable, "error", snapshot->turntable_error,
+                     sizeof(snapshot->turntable_error));
+
+    cJSON *revision = cJSON_GetObjectItemCaseSensitive(turntable, "track_revision");
+    cJSON *progress = cJSON_GetObjectItemCaseSensitive(turntable, "progress_ms");
+    cJSON *duration = cJSON_GetObjectItemCaseSensitive(turntable, "duration_ms");
+    cJSON *sampled = cJSON_GetObjectItemCaseSensitive(turntable, "sampled_at_epoch");
+    if (cJSON_IsNumber(revision) && revision->valuedouble >= 0 &&
+        revision->valuedouble <= UINT32_MAX) {
+        snapshot->turntable_track_revision = (uint32_t)revision->valuedouble;
+    }
+    if (cJSON_IsNumber(progress) && progress->valuedouble >= 0 &&
+        progress->valuedouble <= UINT32_MAX) {
+        snapshot->turntable_progress_ms = (uint32_t)progress->valuedouble;
+    }
+    if (cJSON_IsNumber(duration) && duration->valuedouble >= 0 &&
+        duration->valuedouble <= UINT32_MAX) {
+        snapshot->turntable_duration_ms = (uint32_t)duration->valuedouble;
+    }
+    if (snapshot->turntable_duration_ms > 0 &&
+        snapshot->turntable_progress_ms > snapshot->turntable_duration_ms) {
+        snapshot->turntable_progress_ms = snapshot->turntable_duration_ms;
+    }
+    snapshot->turntable_sampled_at = cJSON_IsNumber(sampled) ? (time_t)sampled->valuedouble : 0;
+
+    cJSON *palette = cJSON_GetObjectItemCaseSensitive(turntable, "palette");
+    if (cJSON_IsArray(palette) && cJSON_GetArraySize(palette) >= 3) {
+        for (size_t index = 0; index < 3; index++) {
+            cJSON *value = cJSON_GetArrayItem(palette, index);
+            if (cJSON_IsNumber(value) && value->valuedouble >= 0 &&
+                value->valuedouble <= 0xFFFFFF) {
+                snapshot->turntable_palette[index] = (uint32_t)value->valuedouble;
+            }
+        }
     }
 }
 
@@ -1092,6 +1172,7 @@ static bool parse_snapshot(const char *json, codex_snapshot_t *snapshot)
     copy_trae_status(root, snapshot);
     copy_weather_status(root, snapshot);
     copy_performance_status(root, snapshot);
+    copy_turntable_status(root, snapshot);
     copy_dotii_state(root, snapshot);
     ok = true;
 
@@ -1356,6 +1437,42 @@ static bool send_bambu_command(bambu_command_t command)
     return error == ESP_OK && status == 202;
 }
 
+static bool send_turntable_command(const turntable_command_t *command)
+{
+    const device_config_values_t *device_config = device_config_get();
+    char url[256];
+    strlcpy(url, device_config->bridge_url, sizeof(url));
+    char *last_slash = strrchr(url, '/');
+    if (last_slash == NULL) return false;
+    strlcpy(last_slash + 1, "turntable/command", sizeof(url) - (size_t)(last_slash + 1 - url));
+    char payload[96];
+    if (strcmp(command->action, "seek") == 0) {
+        snprintf(payload, sizeof(payload), "{\"action\":\"seek\",\"position_ms\":%lu}",
+                 (unsigned long)command->position_ms);
+    } else {
+        snprintf(payload, sizeof(payload), "{\"action\":\"%s\"}", command->action);
+    }
+    char response_body[256] = {0};
+    http_body_t response = {.body = response_body, .capacity = sizeof(response_body)};
+    esp_http_client_config_t config = {
+        .url = url, .event_handler = http_event_handler, .user_data = &response,
+        .timeout_ms = 8000, .buffer_size = 512, .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) return false;
+    esp_http_client_set_method(client, HTTP_METHOD_POST);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    if (strlen(device_config->bridge_token) > 0) {
+        esp_http_client_set_header(client, "X-Bridge-Token", device_config->bridge_token);
+    }
+    esp_http_client_set_post_field(client, payload, strlen(payload));
+    esp_err_t error = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    ESP_LOGI(TAG, "Turntable %s command: %s, HTTP %d", command->action, esp_err_to_name(error), status);
+    return error == ESP_OK && status == 200;
+}
+
 static bool send_claudecode_decision(const claudecode_decision_t *decision)
 {
     const device_config_values_t *device_config = device_config_get();
@@ -1493,6 +1610,11 @@ static void bridge_task(void *argument)
             while (s_bambu_command_queue != NULL && xQueueReceive(s_bambu_command_queue, &command, 0) == pdTRUE) {
                 send_bambu_command(command);
             }
+            turntable_command_t turntable_command;
+            while (s_turntable_command_queue != NULL &&
+                   xQueueReceive(s_turntable_command_queue, &turntable_command, 0) == pdTRUE) {
+                send_turntable_command(&turntable_command);
+            }
             claudecode_decision_t decision;
             while (s_decision_queue != NULL && xQueueReceive(s_decision_queue, &decision, 0) == pdTRUE) {
                 if (decision.target == DECISION_TARGET_TRAE) send_trae_decision(&decision);
@@ -1584,11 +1706,12 @@ void connectivity_start(void)
         return;
     }
     s_bambu_command_queue = xQueueCreate(4, sizeof(bambu_command_t));
+    s_turntable_command_queue = xQueueCreate(4, sizeof(turntable_command_t));
     s_decision_queue = xQueueCreate(4, sizeof(claudecode_decision_t));
     s_work_tasks = heap_caps_calloc(CODEX_TASK_DETAIL_MAX, sizeof(*s_work_tasks),
                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    ESP_ERROR_CHECK((s_events == NULL || s_bambu_command_queue == NULL || s_decision_queue == NULL ||
-                     s_work_tasks == NULL) ?
+    ESP_ERROR_CHECK((s_events == NULL || s_bambu_command_queue == NULL || s_turntable_command_queue == NULL ||
+                     s_decision_queue == NULL || s_work_tasks == NULL) ?
                     ESP_ERR_NO_MEM : ESP_OK);
     ESP_LOGI(TAG, "Bridge data buffers ready");
     setenv("TZ", CONFIG_STATE_DISPLAY_TIMEZONE, 1);
@@ -1626,6 +1749,26 @@ bool connectivity_bambu_command(const char *action)
     else if (strcmp(action, "stop") == 0) command = BAMBU_COMMAND_STOP;
     else return false;
     if (xQueueSend(s_bambu_command_queue, &command, 0) != pdTRUE) return false;
+    xEventGroupSetBits(s_events, REFRESH_REQUESTED_BIT);
+    return true;
+}
+
+bool connectivity_turntable_command(const char *action, uint32_t position_ms)
+{
+    if (action == NULL || (strcmp(action, "playpause") != 0 && strcmp(action, "previous") != 0 &&
+                           strcmp(action, "next") != 0 && strcmp(action, "seek") != 0)) {
+        return false;
+    }
+    const device_config_values_t *device_config = device_config_get();
+    if (device_config->link_mode == DEVICE_LINK_MODE_BLE) {
+        if (!ble_bridge_is_connected()) return false;
+        ble_bridge_report_turntable_command(action, position_ms);
+        return true;
+    }
+    if (s_turntable_command_queue == NULL) return false;
+    turntable_command_t command = {.position_ms = position_ms};
+    strlcpy(command.action, action, sizeof(command.action));
+    if (xQueueSend(s_turntable_command_queue, &command, 0) != pdTRUE) return false;
     xEventGroupSetBits(s_events, REFRESH_REQUESTED_BIT);
     return true;
 }

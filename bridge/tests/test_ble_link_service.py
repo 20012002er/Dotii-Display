@@ -46,7 +46,8 @@ class FakeClient:
             handler(None, bytearray(notice))
 
 
-def make_service(temporary: str, payloads: list[str], on_decision=None) -> tuple[BleLinkService, SimpleNamespace]:
+def make_service(temporary: str, payloads: list[str], on_decision=None,
+                 on_turntable_command=None) -> tuple[BleLinkService, SimpleNamespace]:
     bluetooth = SimpleNamespace(
         lock=__import__("threading").Lock(),
         platform=SimpleNamespace(name="macos", bluetooth_pair_on_connect=False),
@@ -60,7 +61,10 @@ def make_service(temporary: str, payloads: list[str], on_decision=None) -> tuple
         calls["count"] += 1
         return payloads[index]
 
-    service = BleLinkService(bluetooth, Path(temporary), provider, on_decision=on_decision)
+    service = BleLinkService(
+        bluetooth, Path(temporary), provider, on_decision=on_decision,
+        on_turntable_command=on_turntable_command,
+    )
     return service, SimpleNamespace(calls=calls)
 
 
@@ -121,6 +125,35 @@ class BleLinkServiceTests(unittest.TestCase):
 
         self.assertEqual(result["decision"], {"behavior": "allow"})
         self.assertIsNone(broker.snapshot()["pending"])
+
+    def test_sync_turntable_notice_dispatches_playback_and_seek(self) -> None:
+        command = mock.Mock()
+        with tempfile.TemporaryDirectory(dir=BRIDGE.parent / ".codx") as temporary:
+            service, _ = make_service(
+                temporary, ['{"a":1}'], on_turntable_command=command,
+            )
+            service.set_binding(True, "AA-BB")
+            client = run_session(service, stop_after_writes=1)
+            asyncio.run(client.emulate_sync(b'{"turntable":{"action":"playpause"}}'))
+            asyncio.run(client.emulate_sync(
+                b'{"turntable":{"action":"seek","position_ms":123}}'
+            ))
+
+        self.assertEqual(command.call_args_list, [
+            mock.call("playpause", None), mock.call("seek", 123),
+        ])
+
+    def test_sync_turntable_command_error_does_not_escape_notify(self) -> None:
+        command = mock.Mock(side_effect=ValueError("Spotify 未运行"))
+        with tempfile.TemporaryDirectory(dir=BRIDGE.parent / ".codx") as temporary:
+            service, _ = make_service(
+                temporary, ['{"a":1}'], on_turntable_command=command,
+            )
+            service.set_binding(True, "AA-BB")
+            client = run_session(service, stop_after_writes=1)
+            asyncio.run(client.emulate_sync(b'{"turntable":{"action":"next"}}'))
+
+        command.assert_called_once_with("next", None)
 
     def test_binds_and_persists(self) -> None:
         with tempfile.TemporaryDirectory(dir=BRIDGE.parent / ".codx") as temporary:

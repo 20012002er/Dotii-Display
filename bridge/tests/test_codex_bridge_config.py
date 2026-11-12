@@ -81,7 +81,7 @@ class CodexUiConfigTests(unittest.TestCase):
 
     def test_module_config_migrates_dotii_as_enabled(self) -> None:
         modules = validate_module_config({"codex": True, "bambu": False})
-        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False})
+        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False, "turntable": False})
 
     def test_dotii_state_prioritizes_failure_then_active_work(self) -> None:
         failed = dotii_state(
@@ -486,6 +486,8 @@ class CodexUiConfigTests(unittest.TestCase):
         performance = {"connected": True, "cpu": {"available": True, "percent": 42.0}}
         bridge.performance = mock.Mock()
         bridge.performance.snapshot.return_value = performance
+        bridge.turntable = mock.Mock()
+        bridge.turntable.snapshot.return_value = {"enabled": False}
         bridge.modules = mock.Mock()
         bridge.modules.read.return_value = dict(MODULE_DEFAULTS)
         bridge.dotii = mock.Mock()
@@ -499,6 +501,8 @@ class CodexUiConfigTests(unittest.TestCase):
         self.assertFalse(snapshot["modules"]["performance"])
         self.assertEqual(snapshot["performance"], performance)
         bridge.performance.snapshot.assert_called_once_with()
+        self.assertEqual(snapshot["turntable"], {"enabled": False})
+        bridge.turntable.snapshot.assert_called_once_with()
 
     def test_performance_config_route_validates_and_saves_all_switches(self) -> None:
         handler = object.__new__(BridgeHandler)
@@ -521,6 +525,56 @@ class CodexUiConfigTests(unittest.TestCase):
         status, body = handler._send_json.call_args.args
         self.assertEqual(status, HTTPStatus.OK)
         self.assertEqual(body, {"ok": True, "performance_config": payload})
+
+    def test_turntable_command_route_requires_device_authorization(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/turntable/command"
+        handler.server = mock.Mock()
+        handler._authorized = mock.Mock(return_value=False)
+        handler._read_admin_action = mock.Mock()
+        handler._send_json = mock.Mock()
+
+        BridgeHandler.do_POST(handler)
+
+        handler._read_admin_action.assert_not_called()
+        handler.server.turntable.command.assert_not_called()
+        handler._send_json.assert_called_once_with(
+            HTTPStatus.UNAUTHORIZED, {"error": "invalid bridge token"}
+        )
+
+    def test_turntable_command_route_forwards_seek_and_returns_small_ok(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/turntable/command"
+        handler.server = mock.Mock()
+        handler._authorized = mock.Mock(return_value=True)
+        handler._read_admin_action = mock.Mock(return_value={
+            "action": "seek", "position_ms": 12345, "ignored": "extra",
+        })
+        handler._send_json = mock.Mock()
+        snapshot = {"playback_state": "playing", "progress_ms": 12345}
+        handler.server.turntable.command.return_value = snapshot
+
+        BridgeHandler.do_POST(handler)
+
+        handler.server.turntable.command.assert_called_once_with("seek", 12345)
+        handler._send_json.assert_called_once_with(HTTPStatus.OK, {"ok": True})
+
+    def test_turntable_command_route_returns_parameter_errors(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/turntable/command"
+        handler.server = mock.Mock()
+        handler._authorized = mock.Mock(return_value=True)
+        handler._read_admin_action = mock.Mock(return_value={"action": "seek"})
+        handler._send_json = mock.Mock()
+        detail = "seek 需要整数 position_ms" + "，附加诊断" * 20
+        handler.server.turntable.command.side_effect = ValueError(detail)
+
+        BridgeHandler.do_POST(handler)
+
+        handler.server.turntable.command.assert_called_once_with("seek", None)
+        handler._send_json.assert_called_once_with(
+            HTTPStatus.BAD_REQUEST, {"error": detail[:48]}
+        )
 
     def test_snapshot_keeps_complete_codex_detail_text(self) -> None:
         long_text = "完整回复" * 2000

@@ -65,6 +65,14 @@ typedef enum {
     WINDOW_WEATHER_FOG,
 } window_weather_t;
 
+typedef enum {
+    TURNTABLE_PLAYBACK_NOT_RUNNING = 0,
+    TURNTABLE_PLAYBACK_PLAYING,
+    TURNTABLE_PLAYBACK_PAUSED,
+    TURNTABLE_PLAYBACK_STOPPED,
+    TURNTABLE_PLAYBACK_ERROR,
+} turntable_playback_state_t;
+
 #define CODEX_TASK_DETAIL_MAX 6
 #define CLAUDECODE_SESSION_MAX 4
 
@@ -92,6 +100,10 @@ typedef struct {
 #define CLAUDECODE_PERM_PREVIEW_MAX 96
 #define CLAUDECODE_PERM_PROJECT_MAX 48
 #define PERFORMANCE_ERROR_MAX 96
+#define TURNTABLE_TITLE_MAX 96
+#define TURNTABLE_ARTIST_MAX 64
+#define TURNTABLE_ALBUM_MAX 96
+#define TURNTABLE_ERROR_MAX 96
 
 typedef struct {
     bool valid;
@@ -230,6 +242,20 @@ typedef struct {
     bool performance_network_available;
     double performance_network_rx_bytes_per_sec;
     double performance_network_tx_bytes_per_sec;
+    bool turntable_enabled;
+    bool turntable_connected;
+    bool turntable_stale;
+    bool turntable_spotify_running;
+    turntable_playback_state_t turntable_playback_state;
+    uint32_t turntable_track_revision;
+    uint32_t turntable_progress_ms;
+    uint32_t turntable_duration_ms;
+    uint32_t turntable_palette[3];
+    time_t turntable_sampled_at;
+    char turntable_title[TURNTABLE_TITLE_MAX];
+    char turntable_artist[TURNTABLE_ARTIST_MAX];
+    char turntable_album[TURNTABLE_ALBUM_MAX];
+    char turntable_error[TURNTABLE_ERROR_MAX];
     bool weather_enabled;
     bool weather_valid;
     bool weather_temperature_available;

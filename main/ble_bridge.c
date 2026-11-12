@@ -247,6 +247,21 @@ void ble_bridge_report_decision(const char *request_id, bool allow)
     set_sync_notice(notice);
 }
 
+void ble_bridge_report_turntable_command(const char *action, uint32_t position_ms)
+{
+    if (action == NULL) return;
+    char notice[128];
+    if (strcmp(action, "seek") == 0) {
+        snprintf(notice, sizeof(notice),
+                 "{\"resend\":false,\"turntable\":{\"action\":\"seek\",\"position_ms\":%lu}}",
+                 (unsigned long)position_ms);
+    } else {
+        snprintf(notice, sizeof(notice),
+                 "{\"resend\":false,\"turntable\":{\"action\":\"%s\"}}", action);
+    }
+    set_sync_notice(notice);
+}
+
 /* BLE 快照通道写入：[1][总长 u16][crc u32][revision u32] / [2][块] / [3]。
    校验通过走 connectivity_ingest_snapshot（与 Wi-Fi 拉取同一解析路径）。 */
 static int handle_snapshot_write(struct os_mbuf *om)

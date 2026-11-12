@@ -19,6 +19,7 @@
 #include "src/misc/cache/instance/lv_image_cache.h"
 #include "nvs.h"
 #include "performance_monitor.h"
+#include "turntable.h"
 #include "sdkconfig.h"
 #include "ui_icons.h"
 #include "window_world.h"
@@ -46,7 +47,7 @@ LV_FONT_DECLARE(ui_font_fixed_20);
 #define COLOR_WARNING 0xF2C66D
 #define COLOR_VIOLET 0x9D7BFF
 #define COLOR_DANGER 0xFF766F
-#define PAGE_COUNT 9
+#define PAGE_COUNT 10
 #define TITLE_HEIGHT 30
 #define DISPLAY_ANGLE_DEFAULT_TENTHS 840
 #define DISPLAY_ANGLE_MIN_TENTHS 800
@@ -78,6 +79,7 @@ static lv_obj_t *s_window_world;
 static lv_obj_t *s_answer_book;
 static lv_obj_t *s_dotii;
 static lv_obj_t *s_performance;
+static lv_obj_t *s_turntable;
 static lv_obj_t *s_control;
 static lv_obj_t *s_settings;
 static lv_obj_t *s_power;
@@ -891,7 +893,8 @@ static bool page_enabled(uint8_t page)
     if (page == 5) return s_snapshot.weather_enabled;
     if (page == 6) return true;
     if (page == 7) return s_snapshot.dotii_enabled;
-    return s_snapshot.performance_enabled;
+    if (page == 8) return s_snapshot.performance_enabled;
+    return s_snapshot.turntable_enabled;
 }
 
 static lv_obj_t *page_screen(uint8_t page)
@@ -904,7 +907,8 @@ static lv_obj_t *page_screen(uint8_t page)
     if (page == 5) return s_window_world;
     if (page == 6) return s_answer_book;
     if (page == 7) return s_dotii;
-    return s_performance;
+    if (page == 8) return s_performance;
+    return s_turntable;
 }
 
 static lv_obj_t *first_enabled_screen(void)
@@ -926,6 +930,7 @@ static bool screen_enabled(lv_obj_t *screen)
     if (screen == s_answer_book) return page_enabled(6);
     if (screen == s_dotii) return page_enabled(7);
     if (screen == s_performance) return page_enabled(8);
+    if (screen == s_turntable) return page_enabled(9);
     return true;
 }
 
@@ -937,7 +942,7 @@ static lv_obj_t *enabled_return_screen(lv_obj_t *screen)
 
 static void update_page_dots(void)
 {
-    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_CYAN, COLOR_WARNING, COLOR_CYAN, COLOR_GREEN};
+    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_CYAN, COLOR_WARNING, COLOR_CYAN, COLOR_GREEN, 0xE57BB1};
     for (uint8_t row = 0; row < PAGE_COUNT; ++row) {
         int total_width = 0;
         uint8_t count = 0;
@@ -2079,6 +2084,14 @@ static void build_performance(void)
     make_page_dots(performance_monitor_content(), 8);
 }
 
+static void build_turntable(void)
+{
+    s_turntable = turntable_build();
+    add_activity_event(s_turntable);
+    lv_obj_add_event_cb(s_turntable, swipe_event, LV_EVENT_GESTURE, NULL);
+    make_page_dots(turntable_content(), 9);
+}
+
 static lv_obj_t *make_dotii_part(lv_obj_t *parent, int width, int height,
                                  int x, int y, uint32_t part_color)
 {
@@ -2770,6 +2783,7 @@ static void update_snapshot(const codex_snapshot_t *snapshot)
     s_snapshot = *snapshot;
     window_world_apply(snapshot);
     performance_monitor_apply(snapshot);
+    turntable_apply(snapshot);
     if (snapshot->docked_rotation_tenths >= DISPLAY_ANGLE_MIN_TENTHS &&
         snapshot->docked_rotation_tenths <= DISPLAY_ANGLE_MAX_TENTHS &&
         (snapshot->docked_rotation_tenths != s_display_angle_tenths ||
@@ -3202,6 +3216,7 @@ static void ui_timer(lv_timer_t *timer)
 {
     (void)timer;
     if (xQueueReceive(s_snapshot_queue, &s_snapshot, 0) == pdTRUE) update_snapshot(&s_snapshot);
+    turntable_tick();
 
     time_t now = time(NULL);
     struct tm local;
@@ -3349,6 +3364,7 @@ void state_ui_start(QueueHandle_t snapshot_queue)
     build_answer_book();
     build_dotii();
     build_performance();
+    build_turntable();
     build_settings();
     build_control();
     build_power();

@@ -63,6 +63,7 @@ class ModuleOnDemandTests(unittest.TestCase):
         self.assertEqual(info["LSMinimumSystemVersion"], "13.0")
         self.assertIn("Dotii", info["NSBluetoothAlwaysUsageDescription"])
         self.assertIn("Dotii", info["NSLocalNetworkUsageDescription"])
+        self.assertIn("Spotify", info["NSAppleEventsUsageDescription"])
         # 打包脚本要求 plist 版本与固件版本一致（build_macos.sh 校验），此处同步把关。
         cmake = (BRIDGE.parent / "CMakeLists.txt").read_text(encoding="utf-8")
         project_ver = re.search(r'PROJECT_VER\s+"([^"]+)"', cmake).group(1)
@@ -130,7 +131,7 @@ class ModuleOnDemandTests(unittest.TestCase):
     def test_first_run_defaults_keep_codex_and_bambu_off(self):
         self.assertEqual(
             validate_module_config(None),
-            {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False},
+            {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False, "turntable": False},
         )
 
     def test_first_run_defaults_enable_custom_and_dotii_pages(self):

@@ -36,6 +36,7 @@ from zai_client import ZaiConfigStore, ZaiService
 from notion_client import NotionConfigStore, NotionService
 from weather_client import WeatherConfigStore, WeatherService
 from performance_client import PerformanceConfigStore, PerformanceService
+from turntable_client import TurntableService
 from claudecode_client import (
     PERMISSION_WAIT_SECONDS,
     ClaudeCodeMonitor,
@@ -96,7 +97,7 @@ CUSTOM_DEFAULTS = {
     "ring_start": "#F2C66D",
     "ring_end": "#5DA9FF",
 }
-MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False}
+MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False, "turntable": False}
 
 
 def resolve_ffmpeg(runtime_folder: Path) -> str | None:
@@ -1790,6 +1791,18 @@ class BridgeHandler(BaseHTTPRequestHandler):
             except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
+        if path == "/api/v1/turntable/command":
+            if not self._authorized():
+                self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "invalid bridge token"})
+                return
+            try:
+                payload = self._read_admin_action()
+                action = payload.get("action")
+                self.bridge.turntable.command(action, payload.get("position_ms"))
+                self._send_json(HTTPStatus.OK, {"ok": True})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)[:48]})
+            return
         if path in {"/api/v1/admin/bambu/command", "/api/v1/bambu/command"}:
             if path.startswith("/api/v1/admin/"):
                 if self._deny_nonlocal():
@@ -1869,7 +1882,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 module_id = payload.get("id")
                 enabled = payload.get("enabled")
                 if module_id not in MODULE_DEFAULTS or not isinstance(enabled, bool):
-                    raise ValueError("id must be codex, bambu, zai, notion, claudecode, dotii, weather or performance and enabled must be boolean")
+                    raise ValueError("id must be a supported module and enabled must be boolean")
                 modules = self.bridge.modules.read()
                 candidate = {**modules, module_id: enabled}
                 if not any(candidate.values()) and not self.bridge.custom.read()["enabled"]:
@@ -1892,6 +1905,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     self.bridge.trae.set_enabled(enabled)
                 elif module_id == "weather":
                     self.bridge.weather.set_enabled(enabled)
+                elif module_id == "turntable":
+                    self.bridge.turntable.set_enabled(enabled)
                 self._send_json(HTTPStatus.OK, {"ok": True, "modules": saved})
             except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -1977,6 +1992,7 @@ class BridgeServer(ThreadingHTTPServer):
         weather: WeatherService,
         performance_config: PerformanceConfigStore,
         performance: PerformanceService,
+        turntable: TurntableService,
         claudecode: ClaudeCodeMonitor,
         claudecode_permission: PermissionBroker,
         claudecode_config: ClaudeCodeConfigStore,
@@ -2013,6 +2029,7 @@ class BridgeServer(ThreadingHTTPServer):
         self.weather = weather
         self.performance_config = performance_config
         self.performance = performance
+        self.turntable = turntable
         self.claudecode = claudecode
         self.claudecode_permission = claudecode_permission
         self.claudecode_config = claudecode_config
@@ -2040,6 +2057,7 @@ class BridgeServer(ThreadingHTTPServer):
         snapshot["notion"] = self.notion.snapshot()
         snapshot["weather"] = self.weather.snapshot()
         snapshot["performance"] = self.performance.snapshot()
+        snapshot["turntable"] = self.turntable.snapshot()
         snapshot["claudecode"] = self.claudecode.snapshot(self.modules.read()["claudecode"])
         snapshot["claudecode"]["permission"] = self.claudecode_permission.snapshot()
         snapshot["trae"] = self.trae.snapshot(self.modules.read().get("trae", False))
@@ -2120,6 +2138,9 @@ def main() -> None:
     performance_config = PerformanceConfigStore(writable_root / "performance.json")
     performance = PerformanceService(performance_config)
     performance.start()
+    turntable = TurntableService(writable_root / "turntable-cache")
+    turntable.start()
+    turntable.set_enabled(modules.read().get("turntable", False))
     claudecode = ClaudeCodeMonitor()
     claudecode_permission = PermissionBroker(
         module_enabled=lambda: modules.read()["claudecode"])
@@ -2146,7 +2167,8 @@ def main() -> None:
                 trae_permission.resolve(request_id, allow))
 
     ble_link = BleLinkService(bluetooth, writable_root, _snapshot_json,
-                              on_decision=_resolve_ble_decision)
+                              on_decision=_resolve_ble_decision,
+                              on_turntable_command=turntable.command)
     # BLE 推送长连接活跃时，状态探测 monitor 跳过（设备只接受一个中心连接）。
     bluetooth.link_active_probe = lambda: bool(ble_link.snapshot().get("connected"))
     bluetooth.on_configured = lambda address, mode: ble_link.set_binding(
@@ -2156,7 +2178,7 @@ def main() -> None:
     server = BridgeServer((arguments.host, arguments.port), store, token, runtime, collector_restart,
                           custom, modules, dotii, display, codex_check, assets, bambu_config, bambu,
                           zai_config, zai, zai_check, notion_config, notion,
-                          weather_config, weather, performance_config, performance,
+                          weather_config, weather, performance_config, performance, turntable,
                           claudecode, claudecode_permission,
                           claudecode_config,
                           trae, trae_permission,
@@ -2205,6 +2227,7 @@ def main() -> None:
         notion.stop()
         weather.stop()
         performance.stop()
+        turntable.stop()
         bluetooth.stop()
         firmware.stop()
         server.server_close()

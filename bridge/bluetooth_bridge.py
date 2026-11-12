@@ -603,7 +603,8 @@ class BleLinkService:
 
     def __init__(self, bluetooth: "BluetoothBridge", runtime_folder: Path,
                  snapshot_provider: Callable[[], str],
-                 on_decision: "Callable[[str, bool], bool] | None" = None) -> None:
+                 on_decision: "Callable[[str, bool], bool] | None" = None,
+                 on_turntable_command: "Callable[[Any, Any], Any] | None" = None) -> None:
         import ble_link
 
         self._ble_link = ble_link
@@ -612,6 +613,7 @@ class BleLinkService:
         self._snapshot_provider = snapshot_provider
         # 设备经 SYNC 上行的权限决策（Dotii 屏上批准/拒绝 Claude Code 请求）。
         self._on_decision = on_decision
+        self._on_turntable_command = on_turntable_command
         self._config_path = runtime_folder / BLE_LINK_CONFIG_NAME
         self._stop = threading.Event()
         self._wake = threading.Event()
@@ -764,6 +766,16 @@ class BleLinkService:
                 allow = decision.get("allow")
                 if isinstance(request_id, str) and isinstance(allow, bool):
                     self._on_decision(request_id, allow)
+            turntable = notice.get("turntable")
+            if isinstance(turntable, dict) and self._on_turntable_command is not None:
+                try:
+                    self._on_turntable_command(
+                        turntable.get("action"), turntable.get("position_ms")
+                    )
+                except (OSError, ValueError, RuntimeError):
+                    pass
+                else:
+                    resend.set()
 
         async with client_class(
             target,

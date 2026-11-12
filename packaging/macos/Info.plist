@@ -28,6 +28,8 @@
   <true/>
   <key>LSMultipleInstancesProhibited</key>
   <true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>用于根据 Dotii 的操作控制本机 Spotify 播放、切歌和进度。</string>
   <key>NSBluetoothAlwaysUsageDescription</key>
   <string>用于发现 Dotii，并向设备安全写入 Wi-Fi 与管理中心连接配置。</string>
   <key>NSLocalNetworkUsageDescription</key>

@@ -2019,6 +2019,86 @@ function renderPerformance(performance = {}, config = normalizePerformanceConfig
     "rx_bytes_per_sec", "tx_bytes_per_sec", "接收", "发送", performance.sampled_at_epoch);
 }
 
+function formatTurntableTime(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
+    : `${minutes}:${seconds}`;
+}
+
+function renderTurntable(turntable = {}, enabled = false) {
+  const status = byId("turntable-status");
+  const error = typeof turntable.error === "string" ? turntable.error.trim() : "";
+  const playbackState = typeof turntable.playback_state === "string" ? turntable.playback_state : "not_running";
+  const playbackLabels = { playing: "正在播放", paused: "已暂停", stopped: "等待播放" };
+  let statusText = "等待 Spotify";
+  let navText = "已启用";
+  let statusState = "waiting";
+
+  if (!enabled) {
+    statusText = "模块已关闭";
+    navText = "已关闭";
+  } else if (turntable.stale === true) {
+    statusText = "数据已过期";
+    statusState = "stale";
+    navText = "数据过期";
+  } else if (turntable.connected !== true) {
+    statusText = error ? "Spotify 读取失败" : "等待管理中心连接";
+    statusState = "error";
+    navText = error ? "读取异常" : "连接中";
+  } else if (error || playbackState === "error") {
+    statusText = "Spotify 读取失败";
+    statusState = "error";
+    navText = "读取异常";
+  } else if (turntable.spotify_running !== true || playbackState === "not_running") {
+    statusText = "Spotify 未运行";
+    navText = "未运行";
+  } else {
+    statusText = playbackLabels[playbackState] || "等待播放";
+    navText = statusText;
+    statusState = "online";
+  }
+  status.dataset.state = statusState;
+  status.textContent = statusText;
+  setText("turntable-nav-state", navText);
+  setText("turntable-playback", statusText);
+  setText("turntable-title", turntable.title || "尚未播放");
+  setText("turntable-artist", turntable.artist || "--");
+  setText("turntable-album", turntable.album || "--");
+  setText("turntable-sampled", turntable.sampled_at_epoch ? `更新于 ${formatTime(turntable.sampled_at_epoch)}` : "尚未更新");
+
+  const duration = Math.max(0, Number(turntable.duration_ms) || 0);
+  const rawProgress = Math.max(0, Number(turntable.progress_ms) || 0);
+  const progress = duration > 0 ? Math.min(rawProgress, duration) : rawProgress;
+  const progressPercent = duration > 0 ? Math.min(100, progress / duration * 100) : 0;
+  byId("turntable-progress-fill").style.width = `${progressPercent}%`;
+  const progressBar = byId("turntable-progress");
+  progressBar.setAttribute("aria-valuemax", String(Math.round(duration / 1000)));
+  progressBar.setAttribute("aria-valuenow", String(Math.round(progress / 1000)));
+  progressBar.setAttribute("aria-valuetext", `${formatTurntableTime(progress)} / ${formatTurntableTime(duration)}`);
+  setText("turntable-progress-current", formatTurntableTime(progress));
+  setText("turntable-progress-total", formatTurntableTime(duration));
+
+  const defaults = [0x101C1A, 0x5DA9FF, 0x28453D];
+  const names = ["background", "accent", "secondary"];
+  names.forEach((name, index) => {
+    const candidate = Number(turntable.palette?.[index]);
+    const color = Number.isInteger(candidate) && candidate >= 0 && candidate <= 0xFFFFFF ? candidate : defaults[index];
+    const hex = `#${color.toString(16).padStart(6, "0").toUpperCase()}`;
+    byId(`turntable-color-${name}`).style.backgroundColor = hex;
+    setText(`turntable-value-${name}`, hex);
+  });
+  byId("turntable-preview").style.setProperty("--turntable-background", byId("turntable-value-background").textContent);
+  byId("turntable-preview").style.setProperty("--turntable-accent", byId("turntable-value-accent").textContent);
+  byId("turntable-preview").style.setProperty("--turntable-secondary", byId("turntable-value-secondary").textContent);
+  setText("turntable-palette-source", !enabled ? "模块已关闭" : turntable.palette_source === "cover" ? "来自专辑封面" : "封面不可用，使用默认配色");
+  byId("turntable-error").hidden = !enabled || !error;
+  setText("turntable-error-detail", error || "--");
+}
+
 async function updatePerformanceConfig() {
   if (state.performanceConfigSaving) return;
   const previous = { ...(state.performanceConfig || normalizePerformanceConfig(
@@ -2073,6 +2153,7 @@ function renderOverview(overview) {
   const dotiiEnabled = modules.dotii?.enabled !== false;
   const weatherEnabled = modules.weather?.enabled === true;
   const performanceEnabled = modules.performance?.enabled === true;
+  const turntableEnabled = modules.turntable?.enabled === true;
   const weeklyAvailable = codex.weekly_available !== false;
   const weekly = weeklyAvailable ? Math.max(0, Math.min(100, Number(codex.weekly_remaining_percent) || 0)) : 0;
   const fiveHourAvailable = codex.five_hour_available === true;
@@ -2105,6 +2186,7 @@ function renderOverview(overview) {
   if (!state.moduleSaving.trae) byId("trae-enabled").checked = traeEnabled;
   if (!state.moduleSaving.weather) byId("weather-enabled").checked = weatherEnabled;
   if (!state.moduleSaving.performance) byId("performance-enabled").checked = performanceEnabled;
+  if (!state.moduleSaving.turntable) byId("turntable-enabled").checked = turntableEnabled;
   const incomingPerformanceConfig = normalizePerformanceConfig(overview.performance_config || {}, snapshot.performance || {});
   if (!state.performanceConfigSaving) {
     state.performanceConfig = incomingPerformanceConfig;
@@ -2116,6 +2198,7 @@ function renderOverview(overview) {
   byId("zai-content").hidden = !zaiEnabled;
   byId("claudecode-content").hidden = !claudecodeEnabled;
   byId("trae-content").hidden = !traeEnabled;
+  byId("turntable-content").hidden = !turntableEnabled;
   setText("codex-nav-state", codexEnabled ? (bridge.collector_state === "online" ? "在线" : bridge.collector_state === "error" ? "异常" : "连接中") : "已关闭");
   renderBambu(snapshot.bambu || {}, overview.bambu_config || {}, bambuEnabled);
   renderZai(snapshot.zai || {}, overview.zai_config || {}, zaiEnabled);
@@ -2124,6 +2207,7 @@ function renderOverview(overview) {
   renderNotionCheck(state.notionCheck, overview.notion_config?.enabled !== false);
   renderWeather(snapshot.weather || {}, overview.weather_config || {}, weatherEnabled);
   renderPerformance(snapshot.performance || {}, state.performanceConfig || incomingPerformanceConfig, performanceEnabled);
+  renderTurntable(snapshot.turntable || {}, turntableEnabled);
   renderClaudecode(snapshot.claudecode || {}, claudecodeEnabled);
   renderTrae(snapshot.trae || {}, traeEnabled);
   const incomingDotiiConfig = overview.dotii_config;
@@ -2374,7 +2458,7 @@ async function updateModule(moduleId, enabled) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "设置失败");
-    const moduleName = { codex: "Codex", bambu: "Bambu", dotii: "Dotii", performance: "性能监控" }[moduleId] || moduleId;
+    const moduleName = { codex: "Codex", bambu: "Bambu", dotii: "Dotii", performance: "性能监控", turntable: "唱片台" }[moduleId] || moduleId;
     showToast(moduleId === "performance"
       ? `Dotii 性能监控页面已${enabled ? "启用" : "关闭"}`
       : `${moduleName} 页面已${enabled ? "启用" : "关闭"}`);
@@ -2816,6 +2900,7 @@ byId("zai-check").addEventListener("click", checkZai);
 byId("weather-enabled").addEventListener("change", (event) => updateModule("weather", event.target.checked));
 byId("weather-form").addEventListener("submit", saveWeather);
 byId("performance-enabled").addEventListener("change", (event) => updateModule("performance", event.target.checked));
+byId("turntable-enabled").addEventListener("change", (event) => updateModule("turntable", event.target.checked));
 PERFORMANCE_METRICS.forEach((metric) => {
   byId(`performance-${metric}-enabled`).addEventListener("change", updatePerformanceConfig);
 });

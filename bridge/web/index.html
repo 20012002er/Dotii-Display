@@ -74,6 +74,11 @@
         <span>性能监控</span>
         <span class="module-meta" id="performance-nav-state">读取中</span>
       </button>
+      <button class="module-tab" type="button" data-panel="turntable" aria-selected="false">
+        <span class="nav-icon turntable-icon" aria-hidden="true"></span>
+        <span>唱片台</span>
+        <span class="module-meta" id="turntable-nav-state">读取中</span>
+      </button>
       <button class="module-tab system-tab" type="button" data-panel="system" aria-selected="false">
         <span class="nav-icon settings-icon" aria-hidden="true"></span>
         <span>设置</span>
@@ -857,6 +862,61 @@
               <label class="performance-config-option"><span><strong>网络</strong><small>接收与发送速率</small></span><input id="performance-network-enabled" type="checkbox" checked><span class="switch-track" aria-hidden="true"></span></label>
             </div>
           </article>
+        </section>
+      </section>
+
+      <section class="panel" id="panel-turntable" aria-labelledby="turntable-heading" hidden>
+        <div class="section-heading">
+          <div>
+            <h2 id="turntable-heading">唱片台</h2>
+            <p>读取这台 Mac 上的 Spotify 播放信息，并将专辑封面配色同步到 Dotii。</p>
+          </div>
+          <span class="status-pill turntable-status" id="turntable-status" data-state="waiting" role="status" aria-live="polite">等待数据</span>
+        </div>
+
+        <div class="module-content turntable-content" id="turntable-content">
+          <article class="turntable-preview" id="turntable-preview">
+            <div class="turntable-disc" aria-hidden="true"></div>
+            <div class="turntable-track-info">
+              <span class="turntable-eyebrow">SPOTIFY · MAC</span>
+              <h3 id="turntable-title">尚未播放</h3>
+              <p id="turntable-artist">--</p>
+              <p class="turntable-album" id="turntable-album">--</p>
+              <div class="turntable-progress" id="turntable-progress" role="progressbar" aria-label="播放进度" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+                <span id="turntable-progress-fill"></span>
+              </div>
+              <div class="turntable-time"><span id="turntable-progress-current">0:00</span><span id="turntable-progress-total">0:00</span></div>
+            </div>
+          </article>
+
+          <div class="metric-grid turntable-metrics">
+            <article class="metric">
+              <span>播放状态</span>
+              <strong id="turntable-playback">--</strong>
+              <small id="turntable-sampled">尚未更新</small>
+            </article>
+            <article class="metric">
+              <span>专辑配色</span>
+              <div class="turntable-palette" aria-label="背景色、强调色和辅助色">
+                <span><i id="turntable-color-background"></i><small id="turntable-value-background">#101C1A</small></span>
+                <span><i id="turntable-color-accent"></i><small id="turntable-value-accent">#5DA9FF</small></span>
+                <span><i id="turntable-color-secondary"></i><small id="turntable-value-secondary">#28453D</small></span>
+              </div>
+              <small id="turntable-palette-source">等待封面</small>
+            </article>
+          </div>
+          <p class="network-note turntable-error" id="turntable-error" hidden><strong>读取异常</strong><span id="turntable-error-detail">--</span></p>
+        </div>
+
+        <section class="module-preferences" aria-labelledby="turntable-preferences-heading">
+          <div class="module-preferences-heading">
+            <div><h3 id="turntable-preferences-heading">唱片台设置</h3><p>启用后开始读取 Spotify；关闭后停止读取和封面下载，并隐藏 Dotii 页面。</p></div>
+            <label class="module-switch">
+              <span>启用唱片台</span>
+              <input id="turntable-enabled" type="checkbox">
+              <span class="switch-track" aria-hidden="true"></span>
+            </label>
+          </div>
         </section>
       </section>
 
