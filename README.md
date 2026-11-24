@@ -1,6 +1,6 @@
 # Dotii 桌面交互屏
 
-Dotii 是一套由 ESP32-S3 圆形 AMOLED 桌面屏与 Windows/macOS 端“Dotii 管理中心”组成的开源状态显示系统。它可以显示 Codex 用量与任务状态、Bambu Lab 打印进度、Z.ai 用量、Claude Code 与 TRAE 工作状态、本机性能、Spotify 唱片台和自定义内容，并通过 Dotii 表情提供轻量互动。设备支持 Wi-Fi 局域网与蓝牙（精简模式）两种数据链路，后者无需网络环境。
+Dotii 是一套由 ESP32-S3 圆形 AMOLED 桌面屏与 Windows/macOS 端“Dotii 管理中心”组成的开源状态显示系统。它可以显示 Codex 用量与任务状态、Bambu Lab 打印进度、Z.ai 用量、Qoder 任务状态与额度用量、Claude Code 与 TRAE 工作状态、本机性能、Spotify 唱片台和自定义内容，并通过 Dotii 表情提供轻量互动。设备支持 Wi-Fi 局域网与蓝牙（精简模式）两种数据链路，后者无需网络环境。
 
 ![Dotii 桌面交互屏产品渲染图](assets/dotii-product-render.png)
 
@@ -14,7 +14,7 @@ Dotii 是一套由 ESP32-S3 圆形 AMOLED 桌面屏与 Windows/macOS 端“Dotii
 | macOS | Apple Silicon、macOS 13 及以上 | `DotiiManagementCenter-macOS-arm64-1.3.2.dmg` | 预览版，未经苹果公证 |
 | 设备固件 | ESP32-S3（微雪 1.75 圆屏） | `state_display.bin` | 需 ESP-IDF 烧录，见[固件 release](../../releases/tag/v1.3.2) |
 
-当前仓库的 v1.3.x 预发布线包含蓝牙精简模式、屏上批准 Claude Code 与 TRAE 权限请求、本机性能监控、Spotify 唱片台、开机动画等新功能，暂未提供 Windows 便携包；Windows 用户可先用上游 v1.1.1 正式版（不含新功能），或按开发指南从源码运行。macOS 预览版目前不支持 Intel Mac。由于尚未经过苹果公证，首次打开时需要在“系统设置 > 隐私与安全性”中手动允许。Windows 和 macOS 安装包均已包含运行所需组件，普通用户无需安装 Python、Node.js、Codex CLI、FFmpeg 或 ESP-IDF。
+当前仓库的 v1.3.x 预发布线包含蓝牙精简模式、屏上批准 Claude Code 与 TRAE 权限请求、Qoder 表情联动与用量仪表盘（支持企业专属 VPC 接入点）、本机性能监控、Spotify 唱片台、开机动画等新功能，暂未提供 Windows 便携包；Windows 用户可先用上游 v1.1.1 正式版（不含新功能），或按开发指南从源码运行。macOS 预览版目前不支持 Intel Mac。由于尚未经过苹果公证，首次打开时需要在“系统设置 > 隐私与安全性”中手动允许。Windows 和 macOS 安装包均已包含运行所需组件，普通用户无需安装 Python、Node.js、Codex CLI、FFmpeg 或 ESP-IDF。
 
 ## 使用前准备
 
@@ -33,7 +33,7 @@ Dotii 是一套由 ESP32-S3 圆形 AMOLED 桌面屏与 Windows/macOS 端“Dotii
 2. 双击 `DotiiManagementCenter.exe`。程序会驻留在系统托盘，并在浏览器打开管理中心；默认地址为 `http://127.0.0.1:8787`。
 3. 用 USB 线连接 Dotii，在“设置”页面识别设备。首次使用时可通过“一键烧录”写入随包固件。
 4. 使用蓝牙配网，将 2.4 GHz Wi-Fi 和管理中心连接信息同步到 Dotii。
-5. 按需启用 Codex、Claude Code、TRAE、Bambu、Z.ai 或性能监控，并在对应页面完成配置。
+5. 按需启用 Codex、Claude Code、TRAE、Qoder、Bambu、Z.ai 或性能监控，并在对应页面完成配置。
 
 请保持解压后的目录结构不变，不要单独移动或运行 `DotiiBridge.exe`。关闭浏览器不会退出管理中心；重新打开页面、查看日志或退出程序时，请使用系统托盘中的 Dotii 图标。
 
@@ -76,6 +76,7 @@ shasum -a 256 -c DotiiManagementCenter-macOS-arm64-1.3.2.dmg.sha256
 - **Z.ai 用量**：读取智谱 GLM Coding Plan 的 5 小时与周窗口剩余额度、套餐档位和重置时间。
 - **Claude Code 状态**：通过官方 hooks 显示 Claude Code 的工作中、等待操作、完成和失败状态，可联动 Dotii 表情；支持**屏上批准**——权限请求推送到 Dotii，在圆屏上直接批准或拒绝（超时自动回落电脑端提示）。
 - **TRAE 状态**：通过官方 Hooks 显示 TRAE 的工作中、等待操作、完成和失败状态，并联动 Dotii 表情；支持屏上批准权限请求，30 秒未决策或管理中心不可达时自动回落电脑端提示。
+- **Qoder 状态与用量**：通过官方 Hooks 上报 Qoder 任务状态并联动 Dotii 表情；填入个人访问令牌（PAT）后读取账户额度，在 Dotii 上新增与 Codex 同风格的用量圆环页——大号百分比居中，小字显示已用 / 总额度，无个人套餐时自动回落组织资源包。支持公网与企业专属（VPC）两种接入点，企业账户填写实例域名后自动路由到企业网关。
 - **本机性能监控**：实时显示电脑 CPU、内存、磁盘读写和网络收发状态，可分别选择需要展示的指标；启用模块后在 Dotii 圆屏同步显示。
 - **Spotify 唱片台（macOS）**：读取本机 Spotify 的曲目、歌手、播放状态和进度，根据专辑封面生成背景与强调色。Dotii 圆屏支持上一首、播放/暂停、下一首和拖动进度控制，可通过 Wi-Fi 或蓝牙精简模式反向控制 Mac 上的 Spotify。
 - **自定义页面**：编辑文字、颜色、图片和圆环，保存后同步到 466 × 466 圆屏。
@@ -84,7 +85,7 @@ shasum -a 256 -c DotiiManagementCenter-macOS-arm64-1.3.2.dmg.sha256
 - **Dotii 表情**：显示待机、眨眼、连接、工作、完成、失败等状态动画，可开启“其他页面 30 秒无操作自动返回表情页”。
 - **设备管理**：提供蓝牙配网、重置配网、显示设置、休眠设置、登录自启动和受保护的一键烧录。数据链路（Wi-Fi 或蓝牙精简模式）在管理页配网时选择；设备设置页也提供无电脑时的备用切换入口。
 
-Codex 与 Bambu 首次运行默认关闭，不会在用户启用前自动安装、登录或连接外部服务。Z.ai、Claude Code、TRAE 与 Spotify 唱片台同样默认关闭：Z.ai 只在用户填入 API Key 并启用后访问智谱接口；Claude Code 的事件上报需要在管理页明确启用，才会修改本机 `~/.claude/settings.json`；TRAE 也需要明确启用后才会修改 `~/.trae-cn/hooks.json`，两者的 Hooks 配置均会自动备份并可随时停用；唱片台仅在 macOS 用户启用后读取本机 Spotify，设备反向控制前还需用户允许自动化权限。性能监控仅读取本机运行指标，Dotii 圆屏页面默认关闭，可按需选择展示指标。窗外小世界也默认关闭，启用并配置高德 API Key 与查询城市后才会访问高德天气接口，Key 只保存在本机；答案之书无需联网，无任何外部请求。
+Codex 与 Bambu 首次运行默认关闭，不会在用户启用前自动安装、登录或连接外部服务。Z.ai、Claude Code、TRAE、Qoder 与 Spotify 唱片台同样默认关闭：Z.ai 只在用户填入 API Key 并启用后访问智谱接口；Claude Code 的事件上报需要在管理页明确启用，才会修改本机 `~/.claude/settings.json`；TRAE 也需要明确启用后才会修改 `~/.trae-cn/hooks.json`；Qoder 的事件上报同样需明确启用后才会修改 `~/.qoder-cn/settings.json`，三者的 Hooks 配置均会自动备份并可随时停用；Qoder 用量只在用户填入 PAT 并打开显示开关后每 2 分钟访问一次 Qoder 额度接口，PAT 仅保存在本机管理中心，不会发送到设备或写入日志；唱片台仅在 macOS 用户启用后读取本机 Spotify，设备反向控制前还需用户允许自动化权限。性能监控仅读取本机运行指标，Dotii 圆屏页面默认关闭，可按需选择展示指标。窗外小世界也默认关闭，启用并配置高德 API Key 与查询城市后才会访问高德天气接口，Key 只保存在本机；答案之书无需联网，无任何外部请求。
 
 ## 常见问题
 
@@ -99,6 +100,13 @@ Windows 请检查系统托盘，macOS 请检查菜单栏，然后通过 Dotii �
 <summary><strong>Codex 页面没有数据</strong></summary>
 
 先确认 Codex 模块已启用，并已在官方 Codex 中完成登录。随后在 Codex 设置中运行“Codex 运行检测”，根据分项结果排查。接口没有提供的数值会显示为 `--`。
+
+</details>
+
+<details>
+<summary><strong>Qoder 用量检测提示 PAT 认证失败</strong></summary>
+
+先确认 PAT 完整复制自对应控制台的“账户设置 → 集成”（以 `pt-` 开头）。**企业账户的 PAT 只在企业网关有效**：请在用量卡片把“接入点”切换为“企业专属（VPC）”，并填写企业实例域名（即 IDE 登录的 `*.vpc.qoder.com.cn` 地址，不含 `https://`），保存后重新检测。公网账户保持默认“公网”接入点即可。
 
 </details>
 
@@ -137,7 +145,7 @@ Windows 日志位于 `%LOCALAPPDATA%\StateDisplay\bridge.log`，macOS 日志位�
 ## 数据与安全
 
 - 管理网页和管理 API 只允许本机访问；Dotii 读取数据时需要设备访问令牌。
-- Wi-Fi 密码、Bambu 访问码、设备令牌和运行配置保存在本机用户目录，不应上传到公开仓库。
+- Wi-Fi 密码、Bambu 访问码、Z.ai API Key、Qoder PAT、设备令牌和运行配置保存在本机用户目录，不应上传到公开仓库。
 - Bambu 数据通过局域网获取。暂停、继续和停止只会在打印机状态允许时开放，并需要用户明确操作。
 - 常规一键烧录不会擦除 NVS。请勿对未知设备、串口或固件执行烧录。
 - Windows 首次允许局域网访问时可能显示防火墙窗口，程序名称应为“Dotii 管理中心后台服务”。请按实际使用的网络类型授权。
