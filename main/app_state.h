@@ -158,6 +158,15 @@ typedef struct {
     char zai_plan_level[16];
     char zai_five_hour_reset_date[16];
     char zai_weekly_reset_date[16];
+    /* Qoder 用量仪表盘：PAT 留在管理中心，设备只收额度数字。 */
+    bool qoder_usage_display;
+    bool qoder_usage_connected;
+    bool qoder_usage_available;
+    bool qoder_usage_exceeded;
+    int qoder_usage_percent;
+    uint32_t qoder_usage_used;
+    uint32_t qoder_usage_total;
+    char qoder_usage_plan[16];
     uint8_t claudecode_session_count;
     time_t claudecode_updated_at;
     claudecode_session_t claudecode_sessions[CLAUDECODE_SESSION_MAX];

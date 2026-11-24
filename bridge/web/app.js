@@ -40,6 +40,10 @@ const state = {
   claudecodeBusy: false,
   traeBusy: false,
   qoderBusy: false,
+  qoderUsageLoaded: false,
+  qoderUsageSaving: false,
+  qoderUsageChecking: false,
+  qoderUsageCheck: null,
   bluetoothModeTouched: false,
   displayDirty: false,
   displaySaving: false,
@@ -1365,6 +1369,117 @@ async function installQoderHooks(action) {
   }
 }
 
+function renderQoderUsage(usage = {}, config = {}, enabled = true) {
+  if (!state.qoderUsageLoaded) {
+    byId("qoder-pat").placeholder = config.has_personal_token ? "已保存，留空表示不修改" : "在 qoder.com.cn 账户设置 → 集成 中创建（pt-…）";
+    state.qoderUsageLoaded = true;
+  }
+  if (!state.qoderUsageSaving) byId("qoder-usage-display").checked = Boolean(config.display_enabled);
+  const configured = Boolean(config.configured);
+  const connected = Boolean(usage.connected);
+  const badge = byId("qoder-usage-state");
+  badge.textContent = !enabled ? "未启用" : !configured ? "待配置 PAT" : connected ? "已连接" : usage.service_state === "error" ? "连接异常" : "连接中";
+  badge.className = `status-pill ${enabled && connected ? "online" : ""}`;
+  const preview = byId("qoder-usage-preview");
+  if (!enabled) preview.textContent = "模块已关闭，不会显示用量页面。";
+  else if (!configured) preview.textContent = "保存 PAT 并打开显示开关后，Dotii 会新增用量页面。";
+  else if (!config.display_enabled) preview.textContent = "显示开关已关闭，Dotii 不会显示用量页面。";
+  else if (connected && usage.available) {
+    const plan = usage.plan ? ` · ${usage.plan}` : "";
+    const exceeded = usage.exceeded ? " · 额度已超限" : "";
+    preview.textContent = `已用 ${usage.used} / ${usage.total}（${usage.percent}%）${plan}${exceeded}`;
+  } else preview.textContent = usage.last_error || "等待用量数据…";
+}
+
+function renderQoderUsageCheck(result, enabled = true) {
+  if (result && !result.checked_at_epoch) result = null;
+  const button = byId("qoder-usage-check");
+  button.disabled = !enabled || state.qoderUsageChecking;
+  const badge = byId("qoder-usage-check-badge");
+  if (state.qoderUsageChecking) {
+    badge.dataset.state = "running";
+    badge.textContent = "检测中";
+    setText("qoder-usage-check-detail", "正在交换 PAT 并读取 Qoder 用量接口…");
+    return;
+  }
+  if (!result) {
+    badge.dataset.state = "idle";
+    badge.textContent = "尚未检测";
+    setText("qoder-usage-check-detail", enabled ? "点击“开始检测”验证 PAT 与用量链路。" : "启用 Qoder 后可运行只读检测。");
+    ["network", "auth", "parse", "quota"].forEach((key) => setText(`qoder-usage-check-${key}`, "--"));
+    setText("qoder-usage-check-time", "尚未检测");
+    return;
+  }
+  badge.dataset.state = result.ok ? "ready" : "error";
+  badge.textContent = result.ok ? "正常" : "异常";
+  setText("qoder-usage-check-network", checkText(result.network?.ok));
+  setText("qoder-usage-check-auth", checkText(result.auth?.ok));
+  setText("qoder-usage-check-parse", checkText(result.parse?.ok));
+  setText("qoder-usage-check-quota", result.available ? `${result.used} / ${result.total}` : "--");
+  setText("qoder-usage-check-detail", result.detail || (result.ok ? "Qoder 用量读取正常。" : "Qoder 用量检测异常。"));
+  setText("qoder-usage-check-time", result.checked_at_epoch ? `检测于 ${formatTime(result.checked_at_epoch)}` : "尚未检测");
+}
+
+async function saveQoderUsage(event) {
+  event.preventDefault();
+  if (state.qoderUsageSaving) return;
+  state.qoderUsageSaving = true;
+  const payload = {
+    personal_token: byId("qoder-pat").value,
+    display_enabled: byId("qoder-usage-display").checked,
+  };
+  try {
+    const response = await fetch("/api/v1/admin/qoder/usage/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    byId("qoder-pat").value = "";
+    byId("qoder-pat").placeholder = "已保存，留空表示不修改";
+    showToast("Qoder 用量配置已保存");
+    await refreshOverview();
+  } catch (error) { showToast(error.message); }
+  finally { state.qoderUsageSaving = false; }
+}
+
+async function saveQoderUsageDisplay(enabled) {
+  if (state.qoderUsageSaving) return;
+  state.qoderUsageSaving = true;
+  try {
+    const response = await fetch("/api/v1/admin/qoder/usage/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({display_enabled: enabled})});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    showToast(enabled ? "已开启 Dotii 用量显示" : "已关闭 Dotii 用量显示");
+    await refreshOverview();
+  } catch (error) { showToast(error.message); }
+  finally { state.qoderUsageSaving = false; }
+}
+
+async function checkQoderUsage() {
+  if (state.qoderUsageChecking) return;
+  state.qoderUsageChecking = true;
+  renderQoderUsageCheck(null, true);
+  try {
+    const response = await fetch("/api/v1/admin/qoder/usage/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Qoder 用量检测失败");
+    state.qoderUsageCheck = result;
+    showToast(result.ok ? "Qoder 用量读取正常" : (result.detail || "Qoder 用量检测发现异常"));
+  } catch (error) {
+    state.qoderUsageCheck = {
+      ok: false,
+      checked_at_epoch: Math.floor(Date.now() / 1000),
+      detail: error.message || "Qoder 用量检测失败",
+    };
+    showToast(state.qoderUsageCheck.detail);
+  } finally {
+    state.qoderUsageChecking = false;
+    renderQoderUsageCheck(state.qoderUsageCheck, byId("qoder-enabled").checked);
+  }
+}
+
 async function saveZai(event) {
   event.preventDefault();
   const payload = {
@@ -2309,6 +2424,8 @@ function renderOverview(overview) {
   renderClaudecode(snapshot.claudecode || {}, claudecodeEnabled);
   renderTrae(snapshot.trae || {}, traeEnabled);
   renderQoder(snapshot.qoder || {}, qoderEnabled);
+  renderQoderUsage(snapshot.qoder?.usage || {}, overview.qoder_usage_config || {}, qoderEnabled);
+  renderQoderUsageCheck(state.qoderUsageCheck || overview.qoder_usage_check, qoderEnabled);
   const incomingDotiiConfig = overview.dotii_config;
   if (!state.dotiiConfigDirty && !state.dotiiConfigSaving && incomingDotiiConfig
       && (!state.dotiiConfig || state.dotiiConfig.revision !== incomingDotiiConfig.revision)) {
@@ -3016,6 +3133,9 @@ byId("trae-remote").addEventListener("change", (event) => updateTraeRemote(event
 byId("qoder-enabled").addEventListener("change", (event) => updateModule("qoder", event.target.checked));
 byId("qoder-hooks-install").addEventListener("click", () => installQoderHooks("install"));
 byId("qoder-hooks-remove").addEventListener("click", () => installQoderHooks("remove"));
+byId("qoder-usage-form").addEventListener("submit", saveQoderUsage);
+byId("qoder-usage-display").addEventListener("change", (event) => saveQoderUsageDisplay(event.target.checked));
+byId("qoder-usage-check").addEventListener("click", checkQoderUsage);
 byId("dotii-enabled").addEventListener("change", (event) => updateModule("dotii", event.target.checked));
 byId("dotii-config-form").addEventListener("submit", saveDotiiConfig);
 byId("dotii-follow-live").addEventListener("click", () => {

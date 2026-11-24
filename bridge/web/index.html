@@ -526,6 +526,40 @@
               <button class="quiet-button" id="qoder-hooks-remove" type="button">停用并清理</button>
             </div>
           </article>
+          <form class="bambu-card module-preference-card" id="qoder-usage-form">
+            <div class="card-heading"><div><h3>用量仪表盘</h3><p>用个人访问令牌（PAT）读取 Qoder 套餐额度，在 Dotii 上新增用量圆环页面。</p></div><span class="status-pill" id="qoder-usage-state">尚未配置</span></div>
+            <div class="bambu-fields settings-bambu-fields">
+              <label><span>PAT</span><input id="qoder-pat" type="password" maxlength="200" autocomplete="new-password" placeholder="在 qoder.com.cn 账户设置 → 集成 中创建（pt-…）"></label>
+            </div>
+            <label class="module-switch">
+              <span>在 Dotii 上显示用量</span>
+              <input id="qoder-usage-display" type="checkbox">
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+            </label>
+            <p class="dependency-status" id="qoder-usage-preview" role="status" aria-live="polite">保存 PAT 并打开显示开关后，Dotii 会新增用量页面。</p>
+            <p class="network-note"><strong>仅保存在本机</strong><span>PAT 只保存在本机管理中心，不会发送到设备或写入日志。圆环显示套餐额度已用占比，中间小字显示已用 / 总额度；无个人套餐时自动回落组织资源包。</span></p>
+            <div class="form-actions"><button class="primary-button" type="submit">保存</button></div>
+          </form>
+          <article class="dependency-panel module-preference-card" id="qoder-usage-check-panel">
+            <div class="dependency-heading">
+              <div>
+                <h3>Qoder 用量检测</h3>
+                <p>检查 PAT 令牌交换与用量数据解析是否正常。</p>
+              </div>
+              <span class="dependency-badge" id="qoder-usage-check-badge" data-state="idle">尚未检测</span>
+            </div>
+            <div class="dependency-details codex-check-details">
+              <div><span>网络连接</span><strong id="qoder-usage-check-network">--</strong></div>
+              <div><span>PAT 认证</span><strong id="qoder-usage-check-auth">--</strong></div>
+              <div><span>用量解析</span><strong id="qoder-usage-check-parse">--</strong></div>
+              <div><span>额度</span><strong id="qoder-usage-check-quota">--</strong></div>
+            </div>
+            <p class="dependency-status" id="qoder-usage-check-detail" role="status" aria-live="polite">启用 Qoder 后可运行只读检测。</p>
+            <div class="dependency-actions codex-check-actions">
+              <button class="primary-button" id="qoder-usage-check" type="button">开始检测</button>
+              <time id="qoder-usage-check-time">尚未检测</time>
+            </div>
+          </article>
         </section>
       </section>
 

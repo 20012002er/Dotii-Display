@@ -926,6 +926,44 @@ static void copy_zai_status(cJSON *root, codex_snapshot_t *snapshot)
     }
 }
 
+/* Qoder 用量：管理中心用 PAT 换 token 后读取额度，设备只消费
+   qoder.usage 里的数字与开关；旧版管理中心无此字段时页面保持隐藏。 */
+static void copy_qoder_usage_status(cJSON *root, codex_snapshot_t *snapshot)
+{
+    snapshot->qoder_usage_display = false;
+    snapshot->qoder_usage_connected = false;
+    snapshot->qoder_usage_available = false;
+    snapshot->qoder_usage_exceeded = false;
+    snapshot->qoder_usage_percent = 0;
+    snapshot->qoder_usage_used = 0;
+    snapshot->qoder_usage_total = 0;
+    snapshot->qoder_usage_plan[0] = '\0';
+    cJSON *qoder = cJSON_GetObjectItemCaseSensitive(root, "qoder");
+    if (!cJSON_IsObject(qoder)) return;
+    cJSON *usage = cJSON_GetObjectItemCaseSensitive(qoder, "usage");
+    if (!cJSON_IsObject(usage)) return;
+    snapshot->qoder_usage_display = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(usage, "display_enabled"));
+    snapshot->qoder_usage_connected = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(usage, "connected"));
+    snapshot->qoder_usage_available = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(usage, "available"));
+    snapshot->qoder_usage_exceeded = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(usage, "exceeded"));
+    copy_json_string(usage, "plan", snapshot->qoder_usage_plan, sizeof(snapshot->qoder_usage_plan));
+    cJSON *percent = cJSON_GetObjectItemCaseSensitive(usage, "percent");
+    if (cJSON_IsNumber(percent)) {
+        int value = percent->valueint;
+        if (value < 0) value = 0;
+        if (value > 100) value = 100;
+        snapshot->qoder_usage_percent = value;
+    }
+    cJSON *used = cJSON_GetObjectItemCaseSensitive(usage, "used");
+    cJSON *total = cJSON_GetObjectItemCaseSensitive(usage, "total");
+    if (cJSON_IsNumber(used) && used->valuedouble > 0) {
+        snapshot->qoder_usage_used = (uint32_t)used->valuedouble;
+    }
+    if (cJSON_IsNumber(total) && total->valuedouble > 0) {
+        snapshot->qoder_usage_total = (uint32_t)total->valuedouble;
+    }
+}
+
 static void copy_claudecode_status(cJSON *root, codex_snapshot_t *snapshot)
 {
     snapshot->claudecode_connected = false;
@@ -1168,6 +1206,7 @@ static bool parse_snapshot(const char *json, codex_snapshot_t *snapshot)
     copy_custom_config(root, snapshot);
     copy_bambu_status(root, snapshot);
     copy_zai_status(root, snapshot);
+    copy_qoder_usage_status(root, snapshot);
     copy_claudecode_status(root, snapshot);
     copy_trae_status(root, snapshot);
     copy_weather_status(root, snapshot);

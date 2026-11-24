@@ -479,7 +479,7 @@ class CodexUiConfigTests(unittest.TestCase):
         bridge.assets = mock.Mock()
         bridge.assets.source_info.return_value = {}
         bridge.assets.render_info.return_value = {}
-        for name in ("bambu", "zai", "notion", "weather", "claudecode", "claudecode_permission", "trae", "trae_permission", "qoder"):
+        for name in ("bambu", "zai", "notion", "weather", "claudecode", "claudecode_permission", "trae", "trae_permission", "qoder", "qoder_usage"):
             service = mock.Mock()
             service.snapshot.return_value = {}
             setattr(bridge, name, service)
@@ -704,6 +704,110 @@ class QoderBridgeWiringTests(unittest.TestCase):
 
         status, _ = handler._send_json.call_args.args
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
+
+
+class QoderUsageWiringTests(unittest.TestCase):
+    def test_usage_config_route_saves_and_reconfigures(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/admin/qoder/usage/config"
+        handler.server = mock.Mock()
+        handler._deny_nonlocal = mock.Mock(return_value=False)
+        payload = {"personal_token": "", "display_enabled": True}
+        handler._read_admin_action = mock.Mock(return_value=payload)
+        handler._send_json = mock.Mock()
+        public = {"configured": True, "has_personal_token": True, "display_enabled": True}
+        handler.server.qoder_usage_config.write.return_value = public
+
+        BridgeHandler.do_POST(handler)
+
+        handler.server.qoder_usage_config.write.assert_called_once_with(payload, preserve_secret=True)
+        handler.server.qoder_usage.reconfigure.assert_called_once_with()
+        status, body = handler._send_json.call_args.args
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(body, {"ok": True, "qoder_usage_config": public})
+
+    def test_usage_check_route_requires_qoder_module(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/admin/qoder/usage/check"
+        handler.server = mock.Mock()
+        handler.server.modules.read.return_value = {"qoder": False}
+        handler._deny_nonlocal = mock.Mock(return_value=False)
+        handler._read_admin_action = mock.Mock(return_value={})
+        handler._send_json = mock.Mock()
+
+        BridgeHandler.do_POST(handler)
+
+        status, _ = handler._send_json.call_args.args
+        self.assertEqual(status, HTTPStatus.BAD_REQUEST)
+        handler.server.qoder_usage.probe.assert_not_called()
+
+    def test_usage_check_route_probes_and_stores_result(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/admin/qoder/usage/check"
+        handler.server = mock.Mock()
+        handler.server.modules.read.return_value = {"qoder": True}
+        handler._deny_nonlocal = mock.Mock(return_value=False)
+        handler._read_admin_action = mock.Mock(return_value={})
+        handler._send_json = mock.Mock()
+        result = {"ok": True, "used": 250, "total": 2000}
+        handler.server.qoder_usage.probe.return_value = result
+
+        BridgeHandler.do_POST(handler)
+
+        handler.server.qoder_usage_check.write.assert_called_once_with(result)
+        status, body = handler._send_json.call_args.args
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(body, result)
+
+    def test_snapshot_embeds_qoder_usage(self) -> None:
+        bridge = object.__new__(BridgeServer)
+        bridge.store = mock.Mock()
+        bridge.store.read.return_value = {}
+        bridge.custom = mock.Mock()
+        bridge.custom.read.return_value = {"enabled": False}
+        bridge.assets = mock.Mock()
+        bridge.assets.source_info.return_value = {}
+        bridge.assets.render_info.return_value = {}
+        for name in ("bambu", "zai", "notion", "weather", "claudecode", "claudecode_permission", "trae", "trae_permission", "qoder"):
+            service = mock.Mock()
+            service.snapshot.return_value = {}
+            setattr(bridge, name, service)
+        usage = {"display_enabled": True, "connected": True, "available": True, "used": 250, "total": 2000, "percent": 12}
+        bridge.qoder_usage = mock.Mock()
+        bridge.qoder_usage.snapshot.return_value = usage
+        bridge.performance = mock.Mock()
+        bridge.performance.snapshot.return_value = {}
+        bridge.turntable = mock.Mock()
+        bridge.turntable.snapshot.return_value = {"enabled": False}
+        bridge.modules = mock.Mock()
+        bridge.modules.read.return_value = dict(MODULE_DEFAULTS)
+        bridge.dotii = mock.Mock()
+        bridge.dotii.read.return_value = default_dotii_config()
+        bridge.display = mock.Mock()
+        bridge.display.read.return_value = {}
+
+        with mock.patch("codex_bridge.dotii_state", return_value={}):
+            snapshot = BridgeServer.snapshot(bridge)
+
+        self.assertEqual(snapshot["qoder"]["usage"], usage)
+
+    def test_qoder_module_toggle_also_toggles_usage_service(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/admin/modules"
+        handler.server = mock.Mock()
+        handler.server.modules.read.return_value = dict(MODULE_DEFAULTS)
+        handler.server.modules.write.return_value = {**MODULE_DEFAULTS, "qoder": True}
+        handler.server.custom.read.return_value = {"enabled": False}
+        handler._deny_nonlocal = mock.Mock(return_value=False)
+        handler._read_admin_action = mock.Mock(return_value={"id": "qoder", "enabled": True})
+        handler._send_json = mock.Mock()
+
+        BridgeHandler.do_POST(handler)
+
+        handler.server.qoder.set_enabled.assert_called_once_with(True)
+        handler.server.qoder_usage.set_enabled.assert_called_once_with(True)
+        status, _ = handler._send_json.call_args.args
+        self.assertEqual(status, HTTPStatus.OK)
 
 
 if __name__ == "__main__":

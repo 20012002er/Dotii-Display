@@ -10,10 +10,18 @@ BRIDGE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BRIDGE))
 
 from qoder_client import (  # noqa: E402
+    COSY_CUSTOM_ALPHABET,
+    COSY_SECRET_B64,
     HOOK_EVENTS,
     QoderMonitor,
+    QoderUsageConfigStore,
+    QoderUsageError,
+    QoderUsageService,
+    cosy_encode,
+    cosy_signature,
     hook_command,
     hooks_installed,
+    parse_usage,
     update_hooks,
 )
 
@@ -184,6 +192,235 @@ class QoderHooksInstallTests(unittest.TestCase):
                 update_hooks(path, 8787, "install")
             self.assertEqual(path.read_text(encoding="utf-8"), "[1, 2, 3]")
             self.assertFalse(hooks_installed(path))
+
+
+def plan_payload(used=250, total=2000, percentage=12.5):
+    return {
+        "qoderUsage": {
+            "userType": "personal_pro",
+            "expiresAt": 1893456000000,
+            "isQuotaExceeded": False,
+            "userQuota": {"total": total, "used": used, "remaining": total - used, "percentage": percentage},
+            "addOnQuota": {"total": 700, "used": 0, "remaining": 700, "percentage": 0},
+        }
+    }
+
+
+class QoderUsageParseTests(unittest.TestCase):
+    def test_plan_quota_is_primary_bucket(self) -> None:
+        usage = parse_usage(plan_payload())
+        self.assertTrue(usage["available"])
+        self.assertEqual(usage["bucket"], "plan")
+        self.assertEqual(usage["used"], 250)
+        self.assertEqual(usage["total"], 2000)
+        self.assertEqual(usage["percent"], 12)
+        self.assertEqual(usage["plan"], "personal_pro")
+        self.assertFalse(usage["exceeded"])
+        self.assertEqual(usage["error"], "")
+
+    def test_percent_clamped_when_used_exceeds_total(self) -> None:
+        usage = parse_usage(plan_payload(used=2500, total=2000, percentage=125))
+        self.assertEqual(usage["percent"], 100)
+
+    def test_org_resource_package_fallback(self) -> None:
+        usage = parse_usage({"qoderUsage": {
+            "userType": "enterprise",
+            "orgResourcePackage": {"used": 100, "cap": 500, "remaining": 400, "percentage": 20, "available": True},
+        }})
+        self.assertTrue(usage["available"])
+        self.assertEqual(usage["bucket"], "org")
+        self.assertEqual(usage["used"], 100)
+        self.assertEqual(usage["total"], 500)
+        self.assertEqual(usage["percent"], 20)
+
+    def test_unwrapped_root_payload(self) -> None:
+        usage = parse_usage({"userQuota": {"total": 100, "used": 40, "remaining": 60, "percentage": 40}})
+        self.assertTrue(usage["available"])
+        self.assertEqual(usage["percent"], 40)
+
+    def test_empty_payload_reports_unavailable(self) -> None:
+        usage = parse_usage({})
+        self.assertFalse(usage["available"])
+        self.assertEqual(usage["used"], 0)
+        self.assertEqual(usage["total"], 0)
+        self.assertTrue(usage["error"])
+
+    def test_zero_total_is_unavailable(self) -> None:
+        usage = parse_usage(plan_payload(used=0, total=0, percentage=0))
+        self.assertFalse(usage["available"])
+
+
+class QoderUsageConfigTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self._tmp.name) / "qoder-usage.json"
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_defaults_and_public_masking(self) -> None:
+        store = QoderUsageConfigStore(self.path)
+        config = store.read()
+        self.assertEqual(config["personal_token"], "")
+        self.assertIs(config["display_enabled"], False)
+        public = store.public()
+        self.assertFalse(public["configured"])
+        self.assertFalse(public["has_personal_token"])
+        self.assertNotIn("personal_token", public)
+
+    def test_write_persists_token_and_display_switch(self) -> None:
+        store = QoderUsageConfigStore(self.path)
+        public = store.write({"personal_token": "pt-secret", "display_enabled": True})
+        self.assertTrue(public["configured"])
+        self.assertTrue(public["display_enabled"])
+        self.assertEqual(store.read()["personal_token"], "pt-secret")
+        self.assertNotIn("pt-secret", json.dumps(public))
+
+    def test_preserve_secret_keeps_existing_token(self) -> None:
+        store = QoderUsageConfigStore(self.path)
+        store.write({"personal_token": "pt-secret", "display_enabled": False})
+        store.write({"personal_token": "", "display_enabled": True}, preserve_secret=True)
+        self.assertEqual(store.read()["personal_token"], "pt-secret")
+        self.assertTrue(store.read()["display_enabled"])
+
+    def test_token_with_whitespace_rejected(self) -> None:
+        store = QoderUsageConfigStore(self.path)
+        with self.assertRaises(ValueError):
+            store.write({"personal_token": "pt bad token"})
+
+
+class QoderCosyProtocolTests(unittest.TestCase):
+    def test_cosy_encode_rearrangement_and_alphabet(self) -> None:
+        # b"hello" -> 标准 base64 "aGVsbG8="（n=8, a=2）-> 重排 "8=VsbGaG"
+        std = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        mapping = {std[i]: COSY_CUSTOM_ALPHABET[i] for i in range(64)}
+        mapping["="] = "$"
+        expected = "".join(mapping[ch] for ch in "8=VsbGaG")
+        self.assertEqual(cosy_encode(b"hello"), expected)
+        self.assertTrue(set(cosy_encode(b"hello")) <= set(COSY_CUSTOM_ALPHABET + "$"))
+
+    def test_cosy_encode_roundtrip(self) -> None:
+        std = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        reverse = {COSY_CUSTOM_ALPHABET[i]: std[i] for i in range(64)}
+        reverse["$"] = "="
+        for sample in (b"", b"a", b"hello world", json.dumps({"personalToken": "pt-x"}).encode()):
+            encoded = cosy_encode(sample)
+            plain_b64 = "".join(reverse[ch] for ch in encoded)
+            n = len(plain_b64)
+            a = n // 3
+            restored = plain_b64[n - a:] + plain_b64[a:n - a] + plain_b64[:a]
+            import base64
+            self.assertEqual(base64.b64decode(restored), sample)
+
+    def test_signature_is_md5_of_appcode_secret_date(self) -> None:
+        import hashlib
+        date = "Tue, 24 Nov 2026 10:00:00 GMT"
+        expected = hashlib.md5(f"cosy&{COSY_SECRET_B64}&{date}".encode()).hexdigest()
+        self.assertEqual(cosy_signature(date), expected)
+
+
+class QoderUsageServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self._tmp.name) / "qoder-usage.json"
+        self.addCleanup(self._tmp.cleanup)
+        self.config = QoderUsageConfigStore(self.path)
+        self.config.write({"personal_token": "pt-secret", "display_enabled": True})
+        self.service = QoderUsageService(self.config, lambda: True)
+
+    def test_fetch_exchanges_token_then_reads_usage(self) -> None:
+        calls = []
+
+        def fake_http(method, url, headers, body=None):
+            calls.append((method, url, headers))
+            if "jobToken" in url:
+                return {"securityOauthToken": "jt-abc", "expireTime": 4102444800000, "name": "dev", "userType": "personal_pro"}
+            return plan_payload()
+
+        self.service._http_json = fake_http
+        usage = self.service._fetch()
+        self.assertTrue(usage["available"])
+        self.assertEqual(usage["used"], 250)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0], "POST")
+        self.assertIn("gateway.qoder.com.cn", calls[0][1])
+        self.assertEqual(calls[1][0], "GET")
+        self.assertIn("/sash/api/v2/me/usage", calls[1][1])
+        self.assertEqual(calls[1][2]["Authorization"], "Bearer jt-abc")
+
+    def test_token_cached_until_expiry(self) -> None:
+        exchanges = []
+
+        def fake_http(method, url, headers, body=None):
+            if "jobToken" in url:
+                exchanges.append(url)
+                return {"securityOauthToken": "jt-abc", "expireTime": 4102444800000}
+            return plan_payload()
+
+        self.service._http_json = fake_http
+        self.service._fetch()
+        self.service._fetch()
+        self.assertEqual(len(exchanges), 1)
+
+    def test_missing_token_raises(self) -> None:
+        self.config.write({"personal_token": "", "display_enabled": True})
+        with self.assertRaises(QoderUsageError):
+            self.service._fetch()
+
+    def test_probe_reports_auth_failure(self) -> None:
+        def fail_exchange(pat):
+            raise QoderUsageError("PAT 认证失败：personal token is invalid", "auth")
+
+        self.service._exchange_token = fail_exchange
+        result = self.service.probe()
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["auth"]["ok"])
+        self.assertIn("认证失败", result["detail"])
+
+    def test_probe_success_reports_usage(self) -> None:
+        self.service._exchange_token = lambda pat: ("jt-abc", 4102444800.0)
+        self.service._request_usage = lambda token: parse_usage(plan_payload())
+        result = self.service.probe()
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["network"]["ok"])
+        self.assertTrue(result["auth"]["ok"])
+        self.assertTrue(result["parse"]["ok"])
+        self.assertEqual(result["used"], 250)
+        self.assertEqual(result["total"], 2000)
+
+    def test_probe_without_token_asks_to_configure(self) -> None:
+        self.config.write({"personal_token": "", "display_enabled": True})
+        result = self.service.probe()
+        self.assertFalse(result["ok"])
+        self.assertIn("PAT", result["detail"])
+
+    def test_snapshot_online_with_data(self) -> None:
+        import time as _time
+        self.service._usage = parse_usage(plan_payload())
+        self.service._last_success = _time.time()
+        snapshot = self.service.snapshot()
+        self.assertEqual(snapshot["service_state"], "online")
+        self.assertTrue(snapshot["connected"])
+        self.assertTrue(snapshot["display_enabled"])
+        self.assertEqual(snapshot["used"], 250)
+        self.assertEqual(snapshot["total"], 2000)
+        self.assertEqual(snapshot["percent"], 12)
+        self.assertEqual(snapshot["source"], "qoder_usage_api")
+
+    def test_snapshot_disabled_when_module_off(self) -> None:
+        service = QoderUsageService(self.config, lambda: False)
+        snapshot = service.snapshot()
+        self.assertEqual(snapshot["service_state"], "disabled")
+        self.assertFalse(snapshot["connected"])
+
+    def test_display_switch_off_stops_polling(self) -> None:
+        self.config.write({"personal_token": "pt-secret", "display_enabled": False})
+        self.assertFalse(self.service._enabled())
+        self.assertEqual(self.service.snapshot()["service_state"], "disabled")
+
+    def test_snapshot_needs_configuration(self) -> None:
+        self.config.write({"personal_token": "", "display_enabled": True})
+        snapshot = self.service.snapshot()
+        self.assertEqual(snapshot["service_state"], "needs_configuration")
+        self.assertFalse(snapshot["configured"])
 
 
 if __name__ == "__main__":

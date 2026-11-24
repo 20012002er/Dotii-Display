@@ -51,6 +51,8 @@ from trae_client import (
 )
 from qoder_client import (
     QoderMonitor,
+    QoderUsageConfigStore,
+    QoderUsageService,
     hooks_installed as qoder_hooks_installed,
     update_hooks as qoder_update_hooks,
 )
@@ -1364,6 +1366,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "display_config": self.bridge.display.read(),
             "bambu_config": self.bridge.bambu_config.public(),
             "zai_config": self.bridge.zai_config.public(),
+            "qoder_usage_config": self.bridge.qoder_usage_config.public(),
+            "qoder_usage_check": self.bridge.qoder_usage_check.read(),
             "notion_config": self.bridge.notion_config.public(),
             "weather_config": self.bridge.weather_config.public(),
             "performance_config": self.bridge.performance_config.read(),
@@ -1842,6 +1846,29 @@ class BridgeHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
+        if path == "/api/v1/admin/qoder/usage/config":
+            if self._deny_nonlocal():
+                return
+            try:
+                config = self.bridge.qoder_usage_config.write(self._read_admin_action(), preserve_secret=True)
+                self.bridge.qoder_usage.reconfigure()
+                self._send_json(HTTPStatus.OK, {"ok": True, "qoder_usage_config": config})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        if path == "/api/v1/admin/qoder/usage/check":
+            if self._deny_nonlocal():
+                return
+            try:
+                self._read_admin_action()
+                if not self.bridge.modules.read()["qoder"]:
+                    raise ValueError("请先启用 Qoder 功能再运行检测")
+                result = self.bridge.qoder_usage.probe()
+                self.bridge.qoder_usage_check.write(result)
+                self._send_json(HTTPStatus.OK, result)
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
         if path == "/api/v1/admin/bambu/refresh":
             if self._deny_nonlocal():
                 return
@@ -1966,6 +1993,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     self.bridge.trae.set_enabled(enabled)
                 elif module_id == "qoder":
                     self.bridge.qoder.set_enabled(enabled)
+                    self.bridge.qoder_usage.set_enabled(enabled)
                 elif module_id == "weather":
                     self.bridge.weather.set_enabled(enabled)
                 elif module_id == "turntable":
@@ -2063,6 +2091,9 @@ class BridgeServer(ThreadingHTTPServer):
         trae_permission: PermissionBroker,
         trae_config: ClaudeCodeConfigStore,
         qoder: QoderMonitor,
+        qoder_usage_config: QoderUsageConfigStore,
+        qoder_usage: QoderUsageService,
+        qoder_usage_check: CodexCheckStore,
         bluetooth: BluetoothBridge,
         ble_link: BleLinkService,
         firmware: FirmwareFlasher,
@@ -2101,6 +2132,9 @@ class BridgeServer(ThreadingHTTPServer):
         self.trae_permission = trae_permission
         self.trae_config = trae_config
         self.qoder = qoder
+        self.qoder_usage_config = qoder_usage_config
+        self.qoder_usage = qoder_usage
+        self.qoder_usage_check = qoder_usage_check
         self.bluetooth = bluetooth
         self.ble_link = ble_link
         self.firmware = firmware
@@ -2128,6 +2162,7 @@ class BridgeServer(ThreadingHTTPServer):
         snapshot["trae"] = self.trae.snapshot(self.modules.read().get("trae", False))
         snapshot["trae"]["permission"] = self.trae_permission.snapshot()
         snapshot["qoder"] = self.qoder.snapshot(self.modules.read().get("qoder", False))
+        snapshot["qoder"]["usage"] = self.qoder_usage.snapshot()
         modules = self.modules.read()
         snapshot["modules"] = {**modules, "custom": custom["enabled"]}
         snapshot["dotii"] = dotii_state(
@@ -2219,6 +2254,13 @@ def main() -> None:
     trae_config = ClaudeCodeConfigStore(writable_root / "trae.json")
     trae_permission.set_mode(trae_config.read()["remote_approve_enabled"])
     qoder = QoderMonitor()
+    qoder_usage_config = QoderUsageConfigStore(writable_root / "qoder-usage.json")
+    qoder_usage_check = CodexCheckStore(writable_root / "qoder-usage-check.json")
+    qoder_usage = QoderUsageService(
+        qoder_usage_config,
+        lambda: modules.read().get("qoder", False),
+    )
+    qoder_usage.start()
     bluetooth = BluetoothBridge(writable_root)
     bluetooth.start()
     server_ref: dict[str, Any] = {}
@@ -2252,6 +2294,7 @@ def main() -> None:
                           trae, trae_permission,
                           trae_config,
                           qoder,
+                          qoder_usage_config, qoder_usage, qoder_usage_check,
                           bluetooth, ble_link, firmware, writable_root, application_root(),
                           arguments.codex_command, arguments.parent_pid)
     server_ref["server"] = server
@@ -2297,6 +2340,7 @@ def main() -> None:
         weather.stop()
         performance.stop()
         turntable.stop()
+        qoder_usage.stop()
         bluetooth.stop()
         firmware.stop()
         server.server_close()

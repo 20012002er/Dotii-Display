@@ -47,7 +47,7 @@ LV_FONT_DECLARE(ui_font_fixed_20);
 #define COLOR_WARNING 0xF2C66D
 #define COLOR_VIOLET 0x9D7BFF
 #define COLOR_DANGER 0xFF766F
-#define PAGE_COUNT 10
+#define PAGE_COUNT 11
 #define TITLE_HEIGHT 30
 #define DISPLAY_ANGLE_DEFAULT_TENTHS 840
 #define DISPLAY_ANGLE_MIN_TENTHS 800
@@ -80,6 +80,7 @@ static lv_obj_t *s_answer_book;
 static lv_obj_t *s_dotii;
 static lv_obj_t *s_performance;
 static lv_obj_t *s_turntable;
+static lv_obj_t *s_qoder_usage;
 static lv_obj_t *s_control;
 static lv_obj_t *s_settings;
 static lv_obj_t *s_power;
@@ -124,6 +125,14 @@ static lv_obj_t *s_zai_plan;
 static lv_obj_t *s_zai_plan_pill;
 static lv_obj_t *s_zai_reset;
 static lv_obj_t *s_zai_weekly_reset;
+static lv_obj_t *s_time_qoder_usage;
+static lv_obj_t *s_qoder_usage_arc;
+static lv_obj_t *s_qoder_usage_percent;
+static lv_obj_t *s_qoder_usage_detail;
+static lv_obj_t *s_qoder_usage_status;
+static lv_obj_t *s_qoder_usage_status_pill;
+static lv_obj_t *s_qoder_usage_status_dot;
+static lv_obj_t *s_qoder_usage_plan;
 static lv_obj_t *s_time_claudecode_main;
 static lv_obj_t *s_claudecode_status_label;
 static lv_obj_t *s_claudecode_detail;
@@ -894,7 +903,9 @@ static bool page_enabled(uint8_t page)
     if (page == 6) return true;
     if (page == 7) return s_snapshot.dotii_enabled;
     if (page == 8) return s_snapshot.performance_enabled;
-    return s_snapshot.turntable_enabled;
+    if (page == 9) return s_snapshot.turntable_enabled;
+    /* Qoder 用量页只在管理台打开显示开关且额度数据在线时出现。 */
+    return s_snapshot.qoder_usage_display && s_snapshot.qoder_usage_connected;
 }
 
 static lv_obj_t *page_screen(uint8_t page)
@@ -908,7 +919,8 @@ static lv_obj_t *page_screen(uint8_t page)
     if (page == 6) return s_answer_book;
     if (page == 7) return s_dotii;
     if (page == 8) return s_performance;
-    return s_turntable;
+    if (page == 9) return s_turntable;
+    return s_qoder_usage;
 }
 
 static lv_obj_t *first_enabled_screen(void)
@@ -931,6 +943,7 @@ static bool screen_enabled(lv_obj_t *screen)
     if (screen == s_dotii) return page_enabled(7);
     if (screen == s_performance) return page_enabled(8);
     if (screen == s_turntable) return page_enabled(9);
+    if (screen == s_qoder_usage) return page_enabled(10);
     return true;
 }
 
@@ -942,7 +955,7 @@ static lv_obj_t *enabled_return_screen(lv_obj_t *screen)
 
 static void update_page_dots(void)
 {
-    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_CYAN, COLOR_WARNING, COLOR_CYAN, COLOR_GREEN, 0xE57BB1};
+    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_CYAN, COLOR_WARNING, COLOR_CYAN, COLOR_GREEN, 0xE57BB1, COLOR_VIOLET};
     for (uint8_t row = 0; row < PAGE_COUNT; ++row) {
         int total_width = 0;
         uint8_t count = 0;
@@ -1810,6 +1823,71 @@ static void build_zai(void)
     s_zai_weekly_reset = make_usage_reset_row(content, 378, NULL);
 
     make_page_dots(content, 2);
+}
+
+/* Qoder 用量仪表盘：与 Codex 页同款全屏圆环，中间大号百分比，
+ * 下方小字显示“已用 / 总额度”；紫色环，额度超限时转红。 */
+static void build_qoder_usage(void)
+{
+    s_qoder_usage = lv_obj_create(NULL);
+    set_screen_background(s_qoder_usage);
+    add_activity_event(s_qoder_usage);
+    lv_obj_add_event_cb(s_qoder_usage, swipe_event, LV_EVENT_GESTURE, NULL);
+    lv_obj_t *content = lv_obj_create(s_qoder_usage);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_size(content, SCREEN_SIZE, SCREEN_SIZE);
+    lv_obj_center(content);
+    lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(content, LV_OBJ_FLAG_CLICKABLE);
+
+    s_qoder_usage_arc = make_usage_arc(content, 140, 400, COLOR_VIOLET);
+
+    lv_obj_t *title = make_label(content, "Qoder", &lv_font_montserrat_28, COLOR_TEXT);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 48);
+    s_time_qoder_usage = make_label(content, "--:--", &lv_font_montserrat_20, COLOR_MUTED);
+    lv_obj_align(s_time_qoder_usage, LV_ALIGN_TOP_MID, 0, 82);
+
+    lv_obj_t *kicker = make_label(content, "额度已用", &ui_font_chinese_semibold_24, COLOR_MUTED);
+    lv_obj_align(kicker, LV_ALIGN_CENTER, 0, -82);
+    s_qoder_usage_percent = make_label(content, "--", &ui_font_digits_64, COLOR_TEXT);
+    lv_obj_set_style_transform_scale(s_qoder_usage_percent, 282, 0);
+    lv_obj_align(s_qoder_usage_percent, LV_ALIGN_CENTER, 0, -19);
+    s_qoder_usage_detail = make_label(content, "-- / --", &lv_font_montserrat_20, COLOR_MUTED);
+    lv_obj_align(s_qoder_usage_detail, LV_ALIGN_CENTER, 0, 36);
+
+    s_qoder_usage_status_pill = lv_obj_create(content);
+    lv_obj_set_size(s_qoder_usage_status_pill, 138, 48);
+    lv_obj_set_style_radius(s_qoder_usage_status_pill, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(s_qoder_usage_status_pill, color(COLOR_GREEN), 0);
+    lv_obj_set_style_bg_opa(s_qoder_usage_status_pill, LV_OPA_20, 0);
+    lv_obj_set_style_border_width(s_qoder_usage_status_pill, 0, 0);
+    lv_obj_set_style_pad_hor(s_qoder_usage_status_pill, 6, 0);
+    lv_obj_set_style_pad_ver(s_qoder_usage_status_pill, 0, 0);
+    lv_obj_set_style_pad_column(s_qoder_usage_status_pill, 4, 0);
+    lv_obj_set_layout(s_qoder_usage_status_pill, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(s_qoder_usage_status_pill, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_qoder_usage_status_pill, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_remove_flag(s_qoder_usage_status_pill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(s_qoder_usage_status_pill, LV_OBJ_FLAG_CLICKABLE);
+    s_qoder_usage_status_dot = lv_obj_create(s_qoder_usage_status_pill);
+    lv_obj_remove_style_all(s_qoder_usage_status_dot);
+    lv_obj_set_size(s_qoder_usage_status_dot, 14, 14);
+    lv_obj_set_style_radius(s_qoder_usage_status_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(s_qoder_usage_status_dot, color(COLOR_GREEN), 0);
+    lv_obj_set_style_bg_opa(s_qoder_usage_status_dot, LV_OPA_COVER, 0);
+    s_qoder_usage_status = make_label(s_qoder_usage_status_pill, "连接中", &s_ui_font, COLOR_MUTED);
+    lv_obj_set_size(s_qoder_usage_status, 82, 22);
+    lv_obj_set_style_text_align(s_qoder_usage_status, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_transform_scale(s_qoder_usage_status, 282, 0);
+    lv_obj_set_style_text_outline_stroke_color(s_qoder_usage_status, color(COLOR_GREEN), 0);
+    lv_obj_set_style_text_outline_stroke_width(s_qoder_usage_status, 2, 0);
+    lv_obj_set_style_text_outline_stroke_opa(s_qoder_usage_status, LV_OPA_COVER, 0);
+    lv_obj_align(s_qoder_usage_status_pill, LV_ALIGN_CENTER, 0, 86);
+
+    s_qoder_usage_plan = make_metric(content, "--", "当前套餐", 167);
+
+    make_page_dots(content, 10);
+    add_activity_event(content);
 }
 
 static void build_claudecode(void)
@@ -2982,6 +3060,39 @@ static void update_snapshot(const codex_snapshot_t *snapshot)
                        snapshot->zai_weekly_reset_date[0])
                           ? snapshot->zai_weekly_reset_date : "--");
 
+    bool qoder_usage_online = snapshot->qoder_usage_display &&
+        snapshot->qoder_usage_connected && snapshot->qoder_usage_available;
+    if (qoder_usage_online) {
+        lv_label_set_text_fmt(s_qoder_usage_percent, "%d%%", snapshot->qoder_usage_percent);
+        lv_arc_set_value(s_qoder_usage_arc, snapshot->qoder_usage_percent);
+        lv_obj_set_style_arc_color(s_qoder_usage_arc,
+                                   color(snapshot->qoder_usage_exceeded ? COLOR_DANGER : COLOR_VIOLET),
+                                   LV_PART_INDICATOR);
+        lv_label_set_text_fmt(s_qoder_usage_detail, "%lu / %lu",
+                              (unsigned long)snapshot->qoder_usage_used,
+                              (unsigned long)snapshot->qoder_usage_total);
+    } else {
+        lv_label_set_text(s_qoder_usage_percent, "--");
+        lv_arc_set_value(s_qoder_usage_arc, 0);
+        lv_obj_set_style_arc_color(s_qoder_usage_arc, color(0x59605E), LV_PART_INDICATOR);
+        lv_label_set_text(s_qoder_usage_detail, "-- / --");
+    }
+    uint32_t qoder_usage_color = !qoder_usage_online ? COLOR_MUTED :
+        snapshot->qoder_usage_exceeded ? COLOR_DANGER : COLOR_GREEN;
+    bool qoder_usage_long = qoder_usage_online && snapshot->qoder_usage_exceeded;
+    lv_label_set_text(s_qoder_usage_status,
+                      !qoder_usage_online ? "连接中" :
+                      qoder_usage_long ? "额度已超限" : "已连接");
+    lv_obj_set_width(s_qoder_usage_status_pill, qoder_usage_long ? 172 : 138);
+    lv_obj_set_width(s_qoder_usage_status, qoder_usage_long ? 116 : 82);
+    lv_obj_set_style_text_color(s_qoder_usage_status, color(qoder_usage_color), 0);
+    lv_obj_set_style_text_outline_stroke_color(s_qoder_usage_status, color(qoder_usage_color), 0);
+    lv_obj_set_style_bg_color(s_qoder_usage_status_dot, color(qoder_usage_color), 0);
+    lv_obj_set_style_bg_color(s_qoder_usage_status_pill, color(qoder_usage_color), 0);
+    lv_obj_set_style_bg_opa(s_qoder_usage_status_pill, LV_OPA_20, 0);
+    lv_label_set_text(s_qoder_usage_plan,
+                      snapshot->qoder_usage_plan[0] ? snapshot->qoder_usage_plan : "--");
+
     bool claudecode_online = snapshot->claudecode_connected;
     uint32_t claudecode_color = COLOR_MUTED;
     if (claudecode_online) {
@@ -3231,6 +3342,7 @@ static void ui_timer(lv_timer_t *timer)
     lv_label_set_text(s_time_bambu_detail, clock);
     lv_label_set_text(s_time_zai_main, clock);
     lv_label_set_text(s_time_claudecode_main, clock);
+    lv_label_set_text(s_time_qoder_usage, clock);
 
     /* 控制中心链路模式行：图标与连接状态每秒刷新。 */
     if (s_control_link_icon != NULL) {
@@ -3355,6 +3467,7 @@ void state_ui_start(QueueHandle_t snapshot_queue)
     build_detail();
     build_bambu();
     build_zai();
+    build_qoder_usage();
     build_claudecode();
     build_claudecode_confirm();
     build_trae_confirm();

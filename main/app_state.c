@@ -112,7 +112,8 @@ bool app_state_has_real_data(const codex_snapshot_t *snapshot)
                               snapshot->performance_enabled && snapshot->performance_connected &&
                               !snapshot->performance_stale;
     return snapshot->zai_connected || snapshot->bambu_connected ||
-           snapshot->claudecode_connected || snapshot->trae_connected || performance_online;
+           snapshot->claudecode_connected || snapshot->trae_connected ||
+           snapshot->qoder_usage_connected || performance_online;
 }
 
 const char *app_state_bambu_status_text(bambu_status_t status)
