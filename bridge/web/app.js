@@ -39,6 +39,7 @@ const state = {
   ringAutoSaveTimer: null,
   claudecodeBusy: false,
   traeBusy: false,
+  qoderBusy: false,
   bluetoothModeTouched: false,
   displayDirty: false,
   displaySaving: false,
@@ -130,6 +131,8 @@ const DOTII_STATE_FALLBACK = [
   { id: "trae_working", label: "工作中", group: "trae" },
   { id: "trae_completed", label: "任务完成", group: "trae" },
   { id: "trae_failure", label: "失败或异常", group: "trae" },
+  { id: "qoder_working", label: "工作中", group: "qoder" },
+  { id: "qoder_completed", label: "任务完成", group: "qoder" },
   { id: "bambu_paused", label: "已暂停", group: "bambu" },
   { id: "bambu_printing", label: "打印中", group: "bambu" },
   { id: "bambu_completed", label: "打印完成", group: "bambu" },
@@ -139,6 +142,7 @@ const DOTII_STATE_GROUP_FALLBACK = [
   { id: "codex", label: "Codex 状态" },
   { id: "claudecode", label: "Claude Code 状态" },
   { id: "trae", label: "TRAE 状态" },
+  { id: "qoder", label: "Qoder 状态" },
   { id: "bambu", label: "Bambu 状态" },
 ];
 const DOTII_FIXED_STATE_FALLBACK = [
@@ -1296,6 +1300,71 @@ async function updateTraeRemote(enabled) {
   }
 }
 
+// ---- Qoder 相关函数 ----
+
+function renderQoder(qoder = {}, enabled = true) {
+  const online = Boolean(qoder.connected);
+  const statusText = !enabled ? "未启用" : online ? (qoder.status_text || "--") : "等待事件";
+  const status = byId("qoder-status");
+  if (status) {
+    status.textContent = statusText;
+    status.style.color = online ? (CLAUDECODE_STATE_COLORS[qoder.status] || "var(--text)") : "var(--muted)";
+  }
+  setText("qoder-project", online ? (qoder.project || "--") : "--");
+  setText("qoder-session-count", online && qoder.session_count ? `${qoder.session_count} 个` : "--");
+  setText("qoder-updated", qoder.updated_at_epoch ? `更新于 ${formatTime(qoder.updated_at_epoch)}` : "等待事件");
+  const sessions = Array.isArray(qoder.sessions) ? qoder.sessions : [];
+  const card = byId("qoder-sessions-card");
+  if (card) card.hidden = !online || sessions.length === 0;
+  const list = byId("qoder-session-list");
+  if (list) {
+    list.innerHTML = sessions.map((item) => `
+      <li class="claudecode-session-item">
+        <span class="claudecode-session-dot" style="background:${CLAUDECODE_STATE_COLORS[item.status] || "var(--muted)"}"></span>
+        <span class="claudecode-session-project">${escapeHtml(item.project || "--")}</span>
+        <span class="claudecode-session-status">${escapeHtml(item.status_text || "--")}</span>
+        <span class="claudecode-session-time">${item.updated_at_epoch ? formatTime(item.updated_at_epoch) : "--"}</span>
+      </li>`).join("");
+  }
+  const connection = byId("qoder-connection");
+  if (connection) {
+    connection.textContent = online ? "已连接" : "尚未连接";
+    connection.className = `status-pill ${online ? "online" : ""}`;
+  }
+  const hooksBadge = byId("qoder-hooks-state");
+  const hooksInstalled = Boolean(state.overview?.qoder_hooks_installed);
+  if (hooksBadge) {
+    hooksBadge.textContent = hooksInstalled ? "已启用" : "未配置";
+    hooksBadge.className = `status-pill ${hooksInstalled ? "online" : ""}`;
+  }
+  setText("qoder-nav-state", !enabled ? "已关闭" : online ? (qoder.status_text || "在线") : "等待事件");
+}
+
+async function installQoderHooks(action) {
+  if (state.qoderBusy) return;
+  state.qoderBusy = true;
+  byId("qoder-hooks-install").disabled = true;
+  byId("qoder-hooks-remove").disabled = true;
+  try {
+    if (action === "install" && !window.confirm("将在 ~/.qoder-cn/settings.json 中添加 Qoder hooks（自动备份，可随时停用）。安装后需重启 Qoder IDE 生效。继续吗？")) return;
+    const response = await fetch("/api/v1/admin/qoder/hooks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    showToast(action === "install" ? "Qoder hooks 已启用，重启 Qoder IDE 后生效" : "Qoder hooks 已移除，重启 Qoder IDE 后生效");
+    await refreshOverview();
+  } catch (error) {
+    showToast(error.message || "操作失败");
+  } finally {
+    state.qoderBusy = false;
+    byId("qoder-hooks-install").disabled = false;
+    byId("qoder-hooks-remove").disabled = false;
+  }
+}
+
 async function saveZai(event) {
   event.preventDefault();
   const payload = {
@@ -1421,6 +1490,16 @@ function renderCollectorStatus(snapshot, modules, bridge) {
     rows.push(["TRAE", "online", null, ["online", `在线 · ${trae.session_count || 1} 个会话`]]);
   } else {
     rows.push(["TRAE", "waiting", null, ["waiting", "等待事件"]]);
+  }
+
+  const qoderEnabled = modules.qoder?.enabled !== false;
+  const qoder = snapshot.qoder || {};
+  if (!qoderEnabled) {
+    rows.push(["Qoder", "disabled", null, ["disabled", "已关闭"]]);
+  } else if (qoder.connected) {
+    rows.push(["Qoder", "online", null, ["online", `在线 · ${qoder.session_count || 1} 个会话`]]);
+  } else {
+    rows.push(["Qoder", "waiting", null, ["waiting", "等待事件"]]);
   }
 
   const turntableEnabled = modules.turntable?.enabled === true;
@@ -2166,6 +2245,7 @@ function renderOverview(overview) {
   const zaiEnabled = modules.zai?.enabled !== false;
   const claudecodeEnabled = modules.claudecode?.enabled !== false;
   const traeEnabled = modules.trae?.enabled !== false;
+  const qoderEnabled = modules.qoder?.enabled !== false;
   const dotiiEnabled = modules.dotii?.enabled !== false;
   const weatherEnabled = modules.weather?.enabled === true;
   const performanceEnabled = modules.performance?.enabled === true;
@@ -2200,6 +2280,7 @@ function renderOverview(overview) {
   if (!state.moduleSaving.zai) byId("zai-enabled").checked = zaiEnabled;
   if (!state.moduleSaving.claudecode) byId("claudecode-enabled").checked = claudecodeEnabled;
   if (!state.moduleSaving.trae) byId("trae-enabled").checked = traeEnabled;
+  if (!state.moduleSaving.qoder) byId("qoder-enabled").checked = qoderEnabled;
   if (!state.moduleSaving.weather) byId("weather-enabled").checked = weatherEnabled;
   if (!state.moduleSaving.performance) byId("performance-enabled").checked = performanceEnabled;
   if (!state.moduleSaving.turntable) byId("turntable-enabled").checked = turntableEnabled;
@@ -2214,6 +2295,7 @@ function renderOverview(overview) {
   byId("zai-content").hidden = !zaiEnabled;
   byId("claudecode-content").hidden = !claudecodeEnabled;
   byId("trae-content").hidden = !traeEnabled;
+  byId("qoder-content").hidden = !qoderEnabled;
   byId("turntable-content").hidden = !turntableEnabled;
   setText("codex-nav-state", codexEnabled ? (bridge.collector_state === "online" ? "在线" : bridge.collector_state === "error" ? "异常" : "连接中") : "已关闭");
   renderBambu(snapshot.bambu || {}, overview.bambu_config || {}, bambuEnabled);
@@ -2226,6 +2308,7 @@ function renderOverview(overview) {
   renderTurntable(snapshot.turntable || {}, turntableEnabled);
   renderClaudecode(snapshot.claudecode || {}, claudecodeEnabled);
   renderTrae(snapshot.trae || {}, traeEnabled);
+  renderQoder(snapshot.qoder || {}, qoderEnabled);
   const incomingDotiiConfig = overview.dotii_config;
   if (!state.dotiiConfigDirty && !state.dotiiConfigSaving && incomingDotiiConfig
       && (!state.dotiiConfig || state.dotiiConfig.revision !== incomingDotiiConfig.revision)) {
@@ -2930,6 +3013,9 @@ byId("trae-enabled").addEventListener("change", (event) => updateModule("trae", 
 byId("trae-hooks-install").addEventListener("click", () => installTraeHooks("install"));
 byId("trae-hooks-remove").addEventListener("click", () => installTraeHooks("remove"));
 byId("trae-remote").addEventListener("change", (event) => updateTraeRemote(event.target.checked));
+byId("qoder-enabled").addEventListener("change", (event) => updateModule("qoder", event.target.checked));
+byId("qoder-hooks-install").addEventListener("click", () => installQoderHooks("install"));
+byId("qoder-hooks-remove").addEventListener("click", () => installQoderHooks("remove"));
 byId("dotii-enabled").addEventListener("change", (event) => updateModule("dotii", event.target.checked));
 byId("dotii-config-form").addEventListener("submit", saveDotiiConfig);
 byId("dotii-follow-live").addEventListener("click", () => {

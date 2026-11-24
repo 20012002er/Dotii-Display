@@ -54,6 +54,11 @@
         <span>TRAE</span>
         <span class="module-meta" id="trae-nav-state">读取中</span>
       </button>
+      <button class="module-tab" type="button" data-panel="qoder" aria-selected="false">
+        <span class="nav-icon qoder-icon" aria-hidden="true"></span>
+        <span>Qoder</span>
+        <span class="module-meta" id="qoder-nav-state">读取中</span>
+      </button>
       <button class="module-tab" type="button" data-panel="custom" aria-selected="false">
         <span class="nav-icon custom-icon" aria-hidden="true"></span>
         <span>自定义</span>
@@ -482,6 +487,44 @@
               </label>
             </div>
             <p class="bambu-help">需要先启用事件上报（安装 PreToolUse hook）。开启后工具调用会推送到 Dotii，最长等待 30 秒；超时或未开启时，权限提示照常出现在电脑端，工作流不受影响。拒绝会附带说明发送给 TRAE。注意：如果 TRAE 中某工具设为手动确认模式，即使屏上批准仍会弹本机确认框，建议在 TRAE 中将工具设为自动模式。</p>
+          </article>
+        </section>
+      </section>
+
+      <section class="panel" id="panel-qoder" aria-labelledby="qoder-heading" hidden>
+        <div class="section-heading">
+          <div>
+            <h2 id="qoder-heading">Qoder</h2>
+            <p>通过 Qoder 官方 hooks 上报任务状态：任务触发时工作中，任务完成时已完成。</p>
+          </div>
+        </div>
+        <div class="module-content" id="qoder-content">
+          <div class="metric-grid" aria-label="Qoder 概览">
+            <article class="metric primary-metric"><span>任务状态</span><strong id="qoder-status">未启用</strong></article>
+            <article class="metric"><span>当前项目</span><strong id="qoder-project">--</strong></article>
+            <article class="metric"><span>会话数</span><strong id="qoder-session-count">--</strong><small id="qoder-updated">等待事件</small></article>
+          </div>
+          <article class="bambu-card qoder-sessions-card" id="qoder-sessions-card" hidden>
+            <div class="card-heading"><div><h3>活动会话</h3><p>按最近活动排序，最多显示 4 个。</p></div><span class="status-pill" id="qoder-connection">尚未连接</span></div>
+            <ul class="claudecode-session-list" id="qoder-session-list"></ul>
+          </article>
+        </div>
+        <section class="module-preferences" aria-labelledby="qoder-preferences-heading">
+          <div class="section-heading">
+            <div><h3 id="qoder-preferences-heading">Qoder 设置</h3><p>事件上报写入 Qoder 的 hooks 配置，只包含状态字段，不读取对话内容。</p></div>
+            <label class="module-switch">
+              <span>启用模块</span>
+              <input id="qoder-enabled" type="checkbox">
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+            </label>
+          </div>
+          <article class="bambu-card module-preference-card" id="qoder-hooks-card">
+            <div class="card-heading"><div><h3>事件上报</h3><p>把 Qoder 的工作状态事件发送到本机管理中心。</p></div><span class="status-pill" id="qoder-hooks-state">未配置</span></div>
+            <p class="bambu-help">启用后会在 <code>~/.qoder-cn/settings.json</code> 中添加 hooks：提交输入、工具调用和任务完成时通知管理中心。修改前会自动备份为 <code>settings.json.dotii-backup</code>，原有配置保持不变，可随时停用恢复。注意：Qoder 的 hooks 不支持热加载，安装或移除后需重启 Qoder IDE 才生效。</p>
+            <div class="card-actions">
+              <button class="primary-button" id="qoder-hooks-install" type="button">启用事件上报</button>
+              <button class="quiet-button" id="qoder-hooks-remove" type="button">停用并清理</button>
+            </div>
           </article>
         </section>
       </section>

@@ -49,6 +49,11 @@ from trae_client import (
     hooks_installed as trae_hooks_installed,
     update_hooks as trae_update_hooks,
 )
+from qoder_client import (
+    QoderMonitor,
+    hooks_installed as qoder_hooks_installed,
+    update_hooks as qoder_update_hooks,
+)
 from bluetooth_bridge import BleLinkService, BluetoothBridge
 from firmware_flasher import FirmwareFlasher
 from platforms import current_platform
@@ -97,7 +102,7 @@ CUSTOM_DEFAULTS = {
     "ring_start": "#F2C66D",
     "ring_end": "#5DA9FF",
 }
-MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False, "turntable": False}
+MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "qoder": False, "dotii": True, "weather": False, "performance": False, "turntable": False}
 
 
 def resolve_ffmpeg(runtime_folder: Path) -> str | None:
@@ -125,6 +130,7 @@ DOTII_STATE_GROUPS = (
     {"id": "codex", "label": "Codex 状态"},
     {"id": "claudecode", "label": "Claude Code 状态"},
     {"id": "trae", "label": "TRAE 状态"},
+    {"id": "qoder", "label": "Qoder 状态"},
     {"id": "bambu", "label": "Bambu 状态"},
 )
 DOTII_FIXED_STATE_DEFINITIONS = (
@@ -147,6 +153,8 @@ DOTII_BUSINESS_STATE_DEFINITIONS = (
     {"id": "trae_working", "label": "工作中", "group": "trae"},
     {"id": "trae_completed", "label": "任务完成", "group": "trae"},
     {"id": "trae_failure", "label": "失败或异常", "group": "trae"},
+    {"id": "qoder_working", "label": "工作中", "group": "qoder"},
+    {"id": "qoder_completed", "label": "任务完成", "group": "qoder"},
     {"id": "bambu_paused", "label": "已暂停", "group": "bambu"},
     {"id": "bambu_printing", "label": "打印中", "group": "bambu"},
     {"id": "bambu_completed", "label": "打印完成", "group": "bambu"},
@@ -169,8 +177,8 @@ DOTII_LEGACY_STATE_EXPANSIONS = {
 }
 DOTII_DEFAULT_BUSINESS_ASSIGNMENTS = {
     "curious": ("codex_waiting_user", "claudecode_waiting_user", "trae_waiting_user", "bambu_paused"),
-    "working": ("codex_working", "claudecode_working", "trae_working", "bambu_printing"),
-    "complete": ("codex_completed", "claudecode_completed", "trae_completed", "bambu_completed"),
+    "working": ("codex_working", "claudecode_working", "trae_working", "qoder_working", "bambu_printing"),
+    "complete": ("codex_completed", "claudecode_completed", "trae_completed", "qoder_completed", "bambu_completed"),
     "failure": ("codex_failure", "claudecode_failure", "trae_failure", "bambu_failure"),
 }
 DOTII_DEFAULT_BUSINESS_EXPRESSION = {
@@ -587,6 +595,16 @@ def validate_dotii_config(payload: Any) -> dict[str, Any]:
             if state_id.startswith("trae_") and state_id not in assigned_states:
                 assigned_states[state_id] = expression_id
 
+    # Qoder 状态定义同理：老配置只迁移一次默认映射。
+    has_qoder_definitions = isinstance(configured_states, list) and any(
+        isinstance(item, dict) and str(item.get("id") or "").startswith("qoder_")
+        for item in configured_states
+    )
+    if not has_qoder_definitions:
+        for state_id, expression_id in DOTII_DEFAULT_BUSINESS_EXPRESSION.items():
+            if state_id.startswith("qoder_") and state_id not in assigned_states:
+                assigned_states[state_id] = expression_id
+
     validated_animations: dict[str, Any] = {
         expression_id: {"states": [], "state_duration_ms": 0}
         for expression_id in DOTII_EXPRESSION_IDS
@@ -645,7 +663,8 @@ def _dotii_assignment_for_state(config: dict[str, Any], state_id: str) -> tuple[
 def dotii_state(snapshot: dict[str, Any], bambu: dict[str, Any], enabled: bool,
                 config: dict[str, Any] | None = None,
                 claudecode: dict[str, Any] | None = None,
-                trae: dict[str, Any] | None = None) -> dict[str, Any]:
+                trae: dict[str, Any] | None = None,
+                qoder: dict[str, Any] | None = None) -> dict[str, Any]:
     """Resolve the device companion expression from public module state only."""
     config = validate_dotii_config(config)
     task = snapshot.get("codex", {}).get("task", {})
@@ -659,6 +678,8 @@ def dotii_state(snapshot: dict[str, Any], bambu: dict[str, Any], enabled: bool,
     claudecode_status = str((claudecode or {}).get("status") or "idle")
     trae_online = bool(trae or {}) and bool(trae.get("connected"))
     trae_status = str((trae or {}).get("status") or "idle")
+    qoder_online = bool(qoder or {}) and bool(qoder.get("connected"))
+    qoder_status = str((qoder or {}).get("status") or "idle")
     # 屏上批准队列非空即等待用户——权限请求优先于一般等待事件。
     claudecode_permission_pending = bool(
         claudecode_online and ((claudecode or {}).get("permission") or {}).get("pending")
@@ -693,6 +714,8 @@ def dotii_state(snapshot: dict[str, Any], bambu: dict[str, Any], enabled: bool,
         state_id, reason = "claudecode_working", "Claude Code 正在工作"
     elif trae_online and trae_status == "working":
         state_id, reason = "trae_working", "TRAE 正在工作"
+    elif qoder_online and qoder_status == "working":
+        state_id, reason = "qoder_working", "Qoder 正在工作"
     elif bambu_connected and bambu_status in {"preparing", "printing", "cancelling"}:
         state_id, reason = "bambu_printing", "Bambu 正在打印"
     elif codex_status == "completed":
@@ -701,6 +724,8 @@ def dotii_state(snapshot: dict[str, Any], bambu: dict[str, Any], enabled: bool,
         state_id, reason = "claudecode_completed", "Claude Code 任务已经完成"
     elif trae_online and trae_status == "completed":
         state_id, reason = "trae_completed", "TRAE 任务已经完成"
+    elif qoder_online and qoder_status == "completed":
+        state_id, reason = "qoder_completed", "Qoder 任务已经完成"
     elif bambu_connected and bambu_status == "completed":
         state_id, reason = "bambu_completed", "Bambu 打印已经完成"
     elif codex_status == "waiting_user":
@@ -1332,6 +1357,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "trae_hooks_installed": trae_hooks_installed(
                 Path.home() / ".trae-cn" / "hooks.json"
             ),
+            "qoder_hooks_installed": qoder_hooks_installed(
+                Path.home() / ".qoder-cn" / "settings.json"
+            ),
             "dotii_config": self.bridge.dotii.read(),
             "display_config": self.bridge.display.read(),
             "bambu_config": self.bridge.bambu_config.public(),
@@ -1349,6 +1377,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 {"id": "notion", "name": "Notion", "enabled": snapshot["modules"].get("notion", False), "available": True, "locked": False},
                 {"id": "claudecode", "name": "Claude Code", "enabled": snapshot["modules"]["claudecode"], "available": True, "locked": False},
                 {"id": "trae", "name": "TRAE", "enabled": snapshot["modules"].get("trae", False), "available": True, "locked": False},
+                {"id": "qoder", "name": "Qoder", "enabled": snapshot["modules"].get("qoder", False), "available": True, "locked": False},
                 {"id": "custom", "name": "自定义", "enabled": snapshot["custom"]["enabled"], "available": True, "locked": False},
                 {"id": "dotii", "name": "Dotii", "enabled": snapshot["modules"]["dotii"], "available": True, "locked": False},
                 {"id": "weather", "name": "窗外小世界", "enabled": snapshot["modules"].get("weather", False), "available": True, "locked": False},
@@ -1782,6 +1811,37 @@ class BridgeHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
+        # ---- Qoder 路由 ----
+        if path == "/api/v1/admin/qoder/event":
+            if self._deny_nonlocal():
+                return
+            try:
+                payload = self._read_admin_action()
+                self.bridge.qoder.record_event(payload)
+                self._send_json(HTTPStatus.OK, {"ok": True})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        if path == "/api/v1/admin/qoder/hooks":
+            if self._deny_nonlocal():
+                return
+            try:
+                payload = self._read_admin_action()
+                action = payload.get("action", "install")
+                if action not in {"install", "remove"}:
+                    raise ValueError("action 必须是 install 或 remove")
+                result = qoder_update_hooks(
+                    Path.home() / ".qoder-cn" / "settings.json",
+                    self.bridge.server_port,
+                    action,
+                )
+                result["qoder"] = self.bridge.qoder.snapshot(
+                    self.bridge.modules.read().get("qoder", False)
+                )
+                self._send_json(HTTPStatus.OK, result)
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
         if path == "/api/v1/admin/bambu/refresh":
             if self._deny_nonlocal():
                 return
@@ -1904,6 +1964,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     self.bridge.claudecode.set_enabled(enabled)
                 elif module_id == "trae":
                     self.bridge.trae.set_enabled(enabled)
+                elif module_id == "qoder":
+                    self.bridge.qoder.set_enabled(enabled)
                 elif module_id == "weather":
                     self.bridge.weather.set_enabled(enabled)
                 elif module_id == "turntable":
@@ -2000,6 +2062,7 @@ class BridgeServer(ThreadingHTTPServer):
         trae: TraeMonitor,
         trae_permission: PermissionBroker,
         trae_config: ClaudeCodeConfigStore,
+        qoder: QoderMonitor,
         bluetooth: BluetoothBridge,
         ble_link: BleLinkService,
         firmware: FirmwareFlasher,
@@ -2037,6 +2100,7 @@ class BridgeServer(ThreadingHTTPServer):
         self.trae = trae
         self.trae_permission = trae_permission
         self.trae_config = trae_config
+        self.qoder = qoder
         self.bluetooth = bluetooth
         self.ble_link = ble_link
         self.firmware = firmware
@@ -2063,12 +2127,14 @@ class BridgeServer(ThreadingHTTPServer):
         snapshot["claudecode"]["permission"] = self.claudecode_permission.snapshot()
         snapshot["trae"] = self.trae.snapshot(self.modules.read().get("trae", False))
         snapshot["trae"]["permission"] = self.trae_permission.snapshot()
+        snapshot["qoder"] = self.qoder.snapshot(self.modules.read().get("qoder", False))
         modules = self.modules.read()
         snapshot["modules"] = {**modules, "custom": custom["enabled"]}
         snapshot["dotii"] = dotii_state(
             snapshot, snapshot["bambu"], modules["dotii"], self.dotii.read(),
             claudecode=snapshot["claudecode"],
             trae=snapshot["trae"],
+            qoder=snapshot["qoder"],
         )
         snapshot["display"] = self.display.read()
         return snapshot
@@ -2152,6 +2218,7 @@ def main() -> None:
         module_enabled=lambda: modules.read().get("trae", False))
     trae_config = ClaudeCodeConfigStore(writable_root / "trae.json")
     trae_permission.set_mode(trae_config.read()["remote_approve_enabled"])
+    qoder = QoderMonitor()
     bluetooth = BluetoothBridge(writable_root)
     bluetooth.start()
     server_ref: dict[str, Any] = {}
@@ -2184,6 +2251,7 @@ def main() -> None:
                           claudecode_config,
                           trae, trae_permission,
                           trae_config,
+                          qoder,
                           bluetooth, ble_link, firmware, writable_root, application_root(),
                           arguments.codex_command, arguments.parent_pid)
     server_ref["server"] = server

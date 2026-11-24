@@ -81,7 +81,7 @@ class CodexUiConfigTests(unittest.TestCase):
 
     def test_module_config_migrates_dotii_as_enabled(self) -> None:
         modules = validate_module_config({"codex": True, "bambu": False})
-        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "dotii": True, "weather": False, "performance": False, "turntable": False})
+        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "qoder": False, "dotii": True, "weather": False, "performance": False, "turntable": False})
 
     def test_dotii_state_prioritizes_failure_then_active_work(self) -> None:
         failed = dotii_state(
@@ -218,7 +218,7 @@ class CodexUiConfigTests(unittest.TestCase):
         self.assertFalse(state["state_hold"])
         self.assertEqual(
             validated["animations"]["working"]["states"],
-            ["codex_working", "claudecode_working", "trae_working", "bambu_printing", "codex_waiting_user"],
+            ["codex_working", "claudecode_working", "trae_working", "qoder_working", "bambu_printing", "codex_waiting_user"],
         )
 
     def test_dotii_config_rejects_duplicate_business_states(self) -> None:
@@ -341,7 +341,7 @@ class CodexUiConfigTests(unittest.TestCase):
         self.assertIn("codex_working", migrated["animations"]["working"]["states"])
         self.assertEqual(migrated["animations"]["working"]["state_duration_ms"], 0)
         self.assertEqual(len(migrated["fixed_states"]), 5)
-        self.assertEqual([group["id"] for group in migrated["state_groups"]], ["codex", "claudecode", "trae", "bambu"])
+        self.assertEqual([group["id"] for group in migrated["state_groups"]], ["codex", "claudecode", "trae", "qoder", "bambu"])
 
     def test_dotii_state_distinguishes_codex_working_from_bambu_printing(self) -> None:
         config = default_dotii_config()
@@ -479,7 +479,7 @@ class CodexUiConfigTests(unittest.TestCase):
         bridge.assets = mock.Mock()
         bridge.assets.source_info.return_value = {}
         bridge.assets.render_info.return_value = {}
-        for name in ("bambu", "zai", "notion", "weather", "claudecode", "claudecode_permission", "trae", "trae_permission"):
+        for name in ("bambu", "zai", "notion", "weather", "claudecode", "claudecode_permission", "trae", "trae_permission", "qoder"):
             service = mock.Mock()
             service.snapshot.return_value = {}
             setattr(bridge, name, service)
@@ -593,6 +593,117 @@ class CodexUiConfigTests(unittest.TestCase):
         task = snapshot["codex"]["task"]
         self.assertEqual(task["last_user_message"], long_text)
         self.assertEqual(task["codex_messages"], [long_text])
+
+
+class QoderBridgeWiringTests(unittest.TestCase):
+    def test_module_defaults_include_qoder_disabled(self) -> None:
+        self.assertIs(MODULE_DEFAULTS["qoder"], False)
+        self.assertIs(validate_module_config({})["qoder"], False)
+
+    def test_dotii_state_covers_qoder_working_and_completed(self) -> None:
+        cases = {
+            "working": ("qoder_working", "working"),
+            "completed": ("qoder_completed", "complete"),
+        }
+        for status, (expected_state, expected_expression) in cases.items():
+            state = dotii_state(
+                {"codex": {"task": {"status": "idle"}}}, {}, True,
+                default_dotii_config(),
+                qoder={"connected": True, "status": status},
+            )
+            self.assertEqual(state["state"], expected_state, msg=status)
+            self.assertEqual(state["expression"], expected_expression, msg=status)
+
+    def test_dotii_state_qoder_ranks_after_trae_and_before_bambu(self) -> None:
+        both = dotii_state(
+            {"codex": {"task": {"status": "idle"}}}, {}, True,
+            default_dotii_config(),
+            trae={"connected": True, "status": "working"},
+            qoder={"connected": True, "status": "working"},
+        )
+        self.assertEqual(both["state"], "trae_working")
+        over_bambu = dotii_state(
+            {"codex": {"task": {"status": "idle"}}},
+            {"configured": True, "connected": True, "status": "printing"},
+            True, default_dotii_config(),
+            qoder={"connected": True, "status": "working"},
+        )
+        self.assertEqual(over_bambu["state"], "qoder_working")
+
+    def test_dotii_state_ignores_qoder_when_offline(self) -> None:
+        state = dotii_state(
+            {"codex": {"task": {"status": "idle"}}}, {}, True,
+            default_dotii_config(),
+            qoder={"connected": False, "status": "working"},
+        )
+        self.assertEqual(state["state"], "idle")
+
+    def test_dotii_config_migrates_qoder_defaults_only_for_legacy_configs(self) -> None:
+        config = default_dotii_config()
+        config["available_states"] = [
+            item for item in config["available_states"] if item["group"] != "qoder"
+        ]
+        for animation in config["animations"].values():
+            animation["states"] = [
+                state_id for state_id in animation["states"] if not state_id.startswith("qoder_")
+            ]
+
+        migrated = validate_dotii_config(config)
+        self.assertIn("qoder_working", migrated["animations"]["working"]["states"])
+        self.assertIn("qoder_completed", migrated["animations"]["complete"]["states"])
+
+        migrated["animations"]["working"]["states"].remove("qoder_working")
+        customized = validate_dotii_config(migrated)
+        self.assertNotIn("qoder_working", customized["animations"]["working"]["states"])
+
+    def test_qoder_event_route_records_payload(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/admin/qoder/event"
+        handler.server = mock.Mock()
+        handler._deny_nonlocal = mock.Mock(return_value=False)
+        payload = {"hook_event_name": "Stop", "session_id": "s1", "cwd": "/tmp/proj"}
+        handler._read_admin_action = mock.Mock(return_value=payload)
+        handler._send_json = mock.Mock()
+
+        BridgeHandler.do_POST(handler)
+
+        handler.server.qoder.record_event.assert_called_once_with(payload)
+        handler._send_json.assert_called_once_with(HTTPStatus.OK, {"ok": True})
+
+    def test_qoder_hooks_route_installs_into_qoder_settings(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/admin/qoder/hooks"
+        handler.server = mock.Mock()
+        handler.server.server_port = 8787
+        handler.server.modules.read.return_value = {"qoder": True}
+        handler.server.qoder.snapshot.return_value = {"status": "idle"}
+        handler._deny_nonlocal = mock.Mock(return_value=False)
+        handler._read_admin_action = mock.Mock(return_value={"action": "install"})
+        handler._send_json = mock.Mock()
+        result = {"ok": True, "action": "install", "changed": ["Stop"], "settings_path": "/tmp/settings.json"}
+
+        with mock.patch("codex_bridge.qoder_update_hooks", return_value=result) as updater:
+            BridgeHandler.do_POST(handler)
+
+        updater.assert_called_once_with(
+            Path.home() / ".qoder-cn" / "settings.json", 8787, "install"
+        )
+        status, body = handler._send_json.call_args.args
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(body["qoder"], {"status": "idle"})
+
+    def test_qoder_hooks_route_rejects_unknown_action(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/admin/qoder/hooks"
+        handler.server = mock.Mock()
+        handler._deny_nonlocal = mock.Mock(return_value=False)
+        handler._read_admin_action = mock.Mock(return_value={"action": "nope"})
+        handler._send_json = mock.Mock()
+
+        BridgeHandler.do_POST(handler)
+
+        status, _ = handler._send_json.call_args.args
+        self.assertEqual(status, HTTPStatus.BAD_REQUEST)
 
 
 if __name__ == "__main__":
