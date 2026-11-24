@@ -19,6 +19,7 @@ from qoder_client import (  # noqa: E402
     QoderUsageService,
     cosy_encode,
     cosy_signature,
+    enterprise_hosts,
     hook_command,
     hooks_installed,
     parse_usage,
@@ -233,6 +234,22 @@ class QoderUsageParseTests(unittest.TestCase):
         self.assertEqual(usage["total"], 500)
         self.assertEqual(usage["percent"], 20)
 
+    def test_enterprise_credits_payload(self) -> None:
+        """企业账户实测响应：无 userQuota，只有组织资源包（credits）。"""
+        usage = parse_usage({"displayMode": "qoder", "qoderUsage": {
+            "userId": "019f20c7", "userType": "enterprise", "usageType": "credits",
+            "totalUsagePercentage": 0, "isQuotaExceeded": False,
+            "orgResourcePackage": {"used": 4130, "remaining": 870, "percentage": 0.83,
+                                   "unit": "credits", "cap": 5000, "available": True},
+        }})
+        self.assertTrue(usage["available"])
+        self.assertEqual(usage["bucket"], "org")
+        self.assertEqual(usage["used"], 4130)
+        self.assertEqual(usage["total"], 5000)
+        self.assertEqual(usage["percent"], 82)
+        self.assertEqual(usage["plan"], "enterprise")
+        self.assertFalse(usage["exceeded"])
+
     def test_unwrapped_root_payload(self) -> None:
         usage = parse_usage({"userQuota": {"total": 100, "used": 40, "remaining": 60, "percentage": 40}})
         self.assertTrue(usage["available"])
@@ -280,6 +297,34 @@ class QoderUsageConfigTests(unittest.TestCase):
         store.write({"personal_token": "", "display_enabled": True}, preserve_secret=True)
         self.assertEqual(store.read()["personal_token"], "pt-secret")
         self.assertTrue(store.read()["display_enabled"])
+
+    def test_endpoint_defaults_to_public(self) -> None:
+        store = QoderUsageConfigStore(self.path)
+        self.assertEqual(store.read()["endpoint"], "public")
+        self.assertEqual(store.read()["enterprise_instance"], "")
+        self.assertEqual(store.public()["endpoint"], "public")
+
+    def test_enterprise_endpoint_requires_valid_instance(self) -> None:
+        store = QoderUsageConfigStore(self.path)
+        with self.assertRaises(ValueError):
+            store.write({"endpoint": "enterprise", "enterprise_instance": ""})
+        with self.assertRaises(ValueError):
+            store.write({"endpoint": "enterprise", "enterprise_instance": "https://zbyh-ai-coding.vpc.qoder.com.cn"})
+        with self.assertRaises(ValueError):
+            store.write({"endpoint": "enterprise", "enterprise_instance": "zbyh-ai-coding.example.com"})
+        with self.assertRaises(ValueError):
+            store.write({"endpoint": "moon"})
+
+    def test_enterprise_endpoint_persists_instance(self) -> None:
+        store = QoderUsageConfigStore(self.path)
+        public = store.write({"endpoint": "enterprise",
+                              "enterprise_instance": "ZBYH-AI-Coding.vpc.qoder.com.cn"})
+        self.assertEqual(public["endpoint"], "enterprise")
+        self.assertEqual(public["enterprise_instance"], "zbyh-ai-coding.vpc.qoder.com.cn")
+        self.assertEqual(store.read()["enterprise_instance"], "zbyh-ai-coding.vpc.qoder.com.cn")
+        # 只切显示开关时保留企业接入点配置
+        store.write({"display_enabled": True}, preserve_secret=True)
+        self.assertEqual(store.read()["endpoint"], "enterprise")
 
     def test_token_with_whitespace_rejected(self) -> None:
         store = QoderUsageConfigStore(self.path)
@@ -345,6 +390,26 @@ class QoderUsageServiceTests(unittest.TestCase):
         self.assertEqual(calls[1][0], "GET")
         self.assertIn("/sash/api/v2/me/usage", calls[1][1])
         self.assertEqual(calls[1][2]["Authorization"], "Bearer jt-abc")
+
+    def test_enterprise_endpoint_uses_vpc_hosts(self) -> None:
+        self.config.write({"personal_token": "pt-secret", "display_enabled": True,
+                           "endpoint": "enterprise",
+                           "enterprise_instance": "zbyh-ai-coding.vpc.qoder.com.cn"})
+        calls = []
+
+        def fake_http(method, url, headers, body=None):
+            calls.append((method, url))
+            if "jobToken" in url:
+                return {"securityOauthToken": "jt-vpc", "expireTime": 4102444800000}
+            return plan_payload()
+
+        self.service._http_json = fake_http
+        usage = self.service._fetch()
+        self.assertTrue(usage["available"])
+        self.assertEqual(calls[0][1],
+                         "https://zbyh-ai-coding-gateway.vpc.qoder.com.cn/algo/api/v3/user/jobToken?Encode=1")
+        self.assertEqual(calls[1][1],
+                         "https://zbyh-ai-coding-openapi.vpc.qoder.com.cn/sash/api/v2/me/usage")
 
     def test_token_cached_until_expiry(self) -> None:
         exchanges = []
@@ -421,6 +486,13 @@ class QoderUsageServiceTests(unittest.TestCase):
         snapshot = self.service.snapshot()
         self.assertEqual(snapshot["service_state"], "needs_configuration")
         self.assertFalse(snapshot["configured"])
+
+
+class QoderEnterpriseHostTests(unittest.TestCase):
+    def test_derives_gateway_and_openapi_subdomains(self) -> None:
+        gateway, openapi = enterprise_hosts("zbyh-ai-coding.vpc.qoder.com.cn")
+        self.assertEqual(gateway, "zbyh-ai-coding-gateway.vpc.qoder.com.cn")
+        self.assertEqual(openapi, "zbyh-ai-coding-openapi.vpc.qoder.com.cn")
 
 
 if __name__ == "__main__":

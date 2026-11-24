@@ -17,6 +17,7 @@ import hashlib
 import http.client
 import json
 import logging
+import re
 import threading
 import time
 import urllib.parse
@@ -250,6 +251,17 @@ JOB_TOKEN_PATH = "/algo/api/v3/user/jobToken?Encode=1"
 USAGE_PATH = "/sash/api/v2/me/usage"
 TOKEN_REFRESH_MARGIN_SECONDS = 300.0
 
+# 企业专属（VPC）部署：控制台域名 <实例>.vpc.qoder.com.cn 本身有 CSRF
+# 防护，API 入口是实例名加 -gateway / -openapi 后缀的两个子域名
+# （从企业版 IDE 的实际请求日志核对）。
+ENTERPRISE_INSTANCE_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.vpc\.qoder\.com\.cn")
+
+
+def enterprise_hosts(instance: str) -> tuple[str, str]:
+    """企业实例域名 → (网关 host, OpenAPI host)。"""
+    label, rest = instance.split(".", 1)
+    return f"{label}-gateway.{rest}", f"{label}-openapi.{rest}"
+
 # cosy 协议常量（社区逆向 + 官方产物核对，与 qoder2api 逐字节一致）。
 COSY_SECRET_B64 = "d2FyLCB3YXIgbmV2ZXIgY2hhbmdlcw=="
 COSY_CUSTOM_ALPHABET = "_doRTgHZBKcGVjlvpC,@aFSx#DPuNJme&i*MzLOEn)sUrthbf%Y^w.(kIQyXqWA!"
@@ -338,7 +350,8 @@ def _usage_text(value: Any, maximum: int, field: str) -> str:
 
 
 class QoderUsageConfigStore:
-    DEFAULTS = {"personal_token": "", "display_enabled": False}
+    DEFAULTS = {"personal_token": "", "display_enabled": False,
+                "endpoint": "public", "enterprise_instance": ""}
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -362,6 +375,8 @@ class QoderUsageConfigStore:
             "has_personal_token": bool(config["personal_token"]),
             "configured": bool(config["personal_token"]),
             "display_enabled": bool(config["display_enabled"]),
+            "endpoint": config["endpoint"],
+            "enterprise_instance": config["enterprise_instance"],
         }
 
     def validate(self, candidate: dict[str, Any], preserve_secret: bool = False) -> dict[str, Any]:
@@ -375,7 +390,17 @@ class QoderUsageConfigStore:
         display = candidate.get("display_enabled", current["display_enabled"])
         if not isinstance(display, bool):
             raise ValueError("display_enabled 必须是布尔值")
-        return {"personal_token": secret, "display_enabled": display}
+        endpoint = candidate.get("endpoint", current["endpoint"])
+        if endpoint not in ("public", "enterprise"):
+            raise ValueError("endpoint 只能是 public 或 enterprise")
+        instance = _usage_text(
+            candidate.get("enterprise_instance", current["enterprise_instance"]),
+            200, "企业实例域名",
+        ).strip().lower()
+        if endpoint == "enterprise" and not ENTERPRISE_INSTANCE_RE.fullmatch(instance):
+            raise ValueError("企业实例域名格式应为 <实例>.vpc.qoder.com.cn")
+        return {"personal_token": secret, "display_enabled": display,
+                "endpoint": endpoint, "enterprise_instance": instance}
 
     def write(self, candidate: dict[str, Any], preserve_secret: bool = False) -> dict[str, Any]:
         validated = self.validate(candidate, preserve_secret=preserve_secret)
@@ -467,8 +492,18 @@ class QoderUsageService:
             raise QoderUsageError("响应格式不受支持", "parse")
         return data
 
+    def _hosts(self) -> tuple[str, str]:
+        """按接入点配置返回 (网关 host, OpenAPI host)；企业配置非法时回落公网。"""
+        config = self.config_store.read()
+        if config.get("endpoint") == "enterprise":
+            instance = str(config.get("enterprise_instance") or "")
+            if ENTERPRISE_INSTANCE_RE.fullmatch(instance):
+                return enterprise_hosts(instance)
+        return USAGE_GATEWAY_HOST, USAGE_OPENAPI_HOST
+
     def _exchange_token(self, pat: str) -> tuple[str, float]:
         """PAT → cosy 编码 jobToken 交换，返回 (jt- 令牌, 到期墙钟秒)。"""
+        gateway, _ = self._hosts()
         fingerprint = _fingerprint(pat)
         date = formatdate(usegmt=True)
         inner = json.dumps({
@@ -476,7 +511,7 @@ class QoderUsageService:
             "needRefresh": False, "authInfo": {},
         })
         body = cosy_encode(json.dumps({"payload": inner, "encodeVersion": "1"}).encode())
-        data = self._http_json("POST", f"https://{USAGE_GATEWAY_HOST}{JOB_TOKEN_PATH}", {
+        data = self._http_json("POST", f"https://{gateway}{JOB_TOKEN_PATH}", {
             "cosy-machinetoken": fingerprint["machineToken"],
             "cosy-machinetype": fingerprint["machineType"],
             "cosy-machineid": fingerprint["machineId"],
@@ -501,7 +536,8 @@ class QoderUsageService:
         return token, expire_epoch
 
     def _request_usage(self, token: str) -> dict[str, Any]:
-        data = self._http_json("GET", f"https://{USAGE_OPENAPI_HOST}{USAGE_PATH}", {
+        _, openapi = self._hosts()
+        data = self._http_json("GET", f"https://{openapi}{USAGE_PATH}", {
             "accept": "application/json",
             "Authorization": f"Bearer {token}",
             "cosy-clienttype": "10",
@@ -646,6 +682,7 @@ class QoderUsageService:
             "module_enabled": enabled,
             "configured": config["configured"],
             "display_enabled": config["display_enabled"],
+            "endpoint": config["endpoint"],
             "service_state": service_state,
             "connected": connected,
             "source": "qoder_usage_api",

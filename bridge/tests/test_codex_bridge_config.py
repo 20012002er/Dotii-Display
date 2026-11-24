@@ -726,6 +726,23 @@ class QoderUsageWiringTests(unittest.TestCase):
         self.assertEqual(status, HTTPStatus.OK)
         self.assertEqual(body, {"ok": True, "qoder_usage_config": public})
 
+    def test_usage_config_route_passes_endpoint_fields(self) -> None:
+        handler = object.__new__(BridgeHandler)
+        handler.path = "/api/v1/admin/qoder/usage/config"
+        handler.server = mock.Mock()
+        handler._deny_nonlocal = mock.Mock(return_value=False)
+        payload = {"personal_token": "", "display_enabled": True,
+                   "endpoint": "enterprise",
+                   "enterprise_instance": "zbyh-ai-coding.vpc.qoder.com.cn"}
+        handler._read_admin_action = mock.Mock(return_value=payload)
+        handler._send_json = mock.Mock()
+        handler.server.qoder_usage_config.write.return_value = {"configured": True}
+
+        BridgeHandler.do_POST(handler)
+
+        handler.server.qoder_usage_config.write.assert_called_once_with(payload, preserve_secret=True)
+        handler.server.qoder_usage.reconfigure.assert_called_once_with()
+
     def test_usage_check_route_requires_qoder_module(self) -> None:
         handler = object.__new__(BridgeHandler)
         handler.path = "/api/v1/admin/qoder/usage/check"

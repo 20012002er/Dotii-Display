@@ -1371,9 +1371,12 @@ async function installQoderHooks(action) {
 
 function renderQoderUsage(usage = {}, config = {}, enabled = true) {
   if (!state.qoderUsageLoaded) {
-    byId("qoder-pat").placeholder = config.has_personal_token ? "已保存，留空表示不修改" : "在 qoder.com.cn 账户设置 → 集成 中创建（pt-…）";
+    byId("qoder-pat").placeholder = config.has_personal_token ? "已保存，留空表示不修改" : "在对应控制台 账户设置 → 集成 中创建（pt-…）";
+    byId("qoder-endpoint").value = config.endpoint === "enterprise" ? "enterprise" : "public";
+    byId("qoder-enterprise-instance").value = config.enterprise_instance || "";
     state.qoderUsageLoaded = true;
   }
+  byId("qoder-enterprise-row").hidden = byId("qoder-endpoint").value !== "enterprise";
   if (!state.qoderUsageSaving) byId("qoder-usage-display").checked = Boolean(config.display_enabled);
   const configured = Boolean(config.configured);
   const connected = Boolean(usage.connected);
@@ -1386,8 +1389,9 @@ function renderQoderUsage(usage = {}, config = {}, enabled = true) {
   else if (!config.display_enabled) preview.textContent = "显示开关已关闭，Dotii 不会显示用量页面。";
   else if (connected && usage.available) {
     const plan = usage.plan ? ` · ${usage.plan}` : "";
+    const endpoint = config.endpoint === "enterprise" ? " · 企业专属" : "";
     const exceeded = usage.exceeded ? " · 额度已超限" : "";
-    preview.textContent = `已用 ${usage.used} / ${usage.total}（${usage.percent}%）${plan}${exceeded}`;
+    preview.textContent = `已用 ${usage.used} / ${usage.total}（${usage.percent}%）${plan}${endpoint}${exceeded}`;
   } else preview.textContent = usage.last_error || "等待用量数据…";
 }
 
@@ -1427,6 +1431,8 @@ async function saveQoderUsage(event) {
   const payload = {
     personal_token: byId("qoder-pat").value,
     display_enabled: byId("qoder-usage-display").checked,
+    endpoint: byId("qoder-endpoint").value,
+    enterprise_instance: byId("qoder-enterprise-instance").value.trim(),
   };
   try {
     const response = await fetch("/api/v1/admin/qoder/usage/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
@@ -3134,6 +3140,7 @@ byId("qoder-enabled").addEventListener("change", (event) => updateModule("qoder"
 byId("qoder-hooks-install").addEventListener("click", () => installQoderHooks("install"));
 byId("qoder-hooks-remove").addEventListener("click", () => installQoderHooks("remove"));
 byId("qoder-usage-form").addEventListener("submit", saveQoderUsage);
+byId("qoder-endpoint").addEventListener("change", (event) => { byId("qoder-enterprise-row").hidden = event.target.value !== "enterprise"; });
 byId("qoder-usage-display").addEventListener("change", (event) => saveQoderUsageDisplay(event.target.checked));
 byId("qoder-usage-check").addEventListener("click", checkQoderUsage);
 byId("dotii-enabled").addEventListener("change", (event) => updateModule("dotii", event.target.checked));

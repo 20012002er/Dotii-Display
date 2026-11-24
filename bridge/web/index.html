@@ -529,7 +529,14 @@
           <form class="bambu-card module-preference-card" id="qoder-usage-form">
             <div class="card-heading"><div><h3>用量仪表盘</h3><p>用个人访问令牌（PAT）读取 Qoder 套餐额度，在 Dotii 上新增用量圆环页面。</p></div><span class="status-pill" id="qoder-usage-state">尚未配置</span></div>
             <div class="bambu-fields settings-bambu-fields">
-              <label><span>PAT</span><input id="qoder-pat" type="password" maxlength="200" autocomplete="new-password" placeholder="在 qoder.com.cn 账户设置 → 集成 中创建（pt-…）"></label>
+              <label><span>接入点</span>
+                <select id="qoder-endpoint">
+                  <option value="public">公网（qoder.com.cn）</option>
+                  <option value="enterprise">企业专属（VPC）</option>
+                </select>
+              </label>
+              <label id="qoder-enterprise-row" hidden><span>企业实例域名</span><input id="qoder-enterprise-instance" type="text" maxlength="200" autocomplete="off" spellcheck="false" placeholder="如 zbyh-ai-coding.vpc.qoder.com.cn"></label>
+              <label><span>PAT</span><input id="qoder-pat" type="password" maxlength="200" autocomplete="new-password" placeholder="在对应控制台 账户设置 → 集成 中创建（pt-…）"></label>
             </div>
             <label class="module-switch">
               <span>在 Dotii 上显示用量</span>
@@ -537,7 +544,7 @@
               <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
             </label>
             <p class="dependency-status" id="qoder-usage-preview" role="status" aria-live="polite">保存 PAT 并打开显示开关后，Dotii 会新增用量页面。</p>
-            <p class="network-note"><strong>仅保存在本机</strong><span>PAT 只保存在本机管理中心，不会发送到设备或写入日志。圆环显示套餐额度已用占比，中间小字显示已用 / 总额度；无个人套餐时自动回落组织资源包。</span></p>
+            <p class="network-note"><strong>仅保存在本机</strong><span>PAT 只保存在本机管理中心，不会发送到设备或写入日志。企业账户请选择「企业专属」并填写实例域名（IDE 登录的 *.vpc.qoder.com.cn 地址，不含 https://）。圆环显示额度已用占比，中间小字显示已用 / 总额度；无个人套餐时自动回落组织资源包。</span></p>
             <div class="form-actions"><button class="primary-button" type="submit">保存</button></div>
           </form>
           <article class="dependency-panel module-preference-card" id="qoder-usage-check-panel">
