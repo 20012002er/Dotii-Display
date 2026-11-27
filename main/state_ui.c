@@ -19,6 +19,7 @@
 #include "src/misc/cache/instance/lv_image_cache.h"
 #include "nvs.h"
 #include "performance_monitor.h"
+#include "pomodoro.h"
 #include "turntable.h"
 #include "sdkconfig.h"
 #include "ui_icons.h"
@@ -47,7 +48,7 @@ LV_FONT_DECLARE(ui_font_fixed_20);
 #define COLOR_WARNING 0xF2C66D
 #define COLOR_VIOLET 0x9D7BFF
 #define COLOR_DANGER 0xFF766F
-#define PAGE_COUNT 11
+#define PAGE_COUNT 12
 #define TITLE_HEIGHT 30
 #define DISPLAY_ANGLE_DEFAULT_TENTHS 840
 #define DISPLAY_ANGLE_MIN_TENTHS 800
@@ -80,6 +81,7 @@ static lv_obj_t *s_answer_book;
 static lv_obj_t *s_dotii;
 static lv_obj_t *s_performance;
 static lv_obj_t *s_turntable;
+static lv_obj_t *s_pomodoro;
 static lv_obj_t *s_qoder_usage;
 static lv_obj_t *s_control;
 static lv_obj_t *s_settings;
@@ -905,7 +907,8 @@ static bool page_enabled(uint8_t page)
     if (page == 8) return s_snapshot.performance_enabled;
     if (page == 9) return s_snapshot.turntable_enabled;
     /* Qoder 用量页只在管理台打开显示开关且额度数据在线时出现。 */
-    return s_snapshot.qoder_usage_display && s_snapshot.qoder_usage_connected;
+    if (page == 10) return s_snapshot.qoder_usage_display && s_snapshot.qoder_usage_connected;
+    return s_snapshot.pomodoro_enabled;
 }
 
 static lv_obj_t *page_screen(uint8_t page)
@@ -920,7 +923,8 @@ static lv_obj_t *page_screen(uint8_t page)
     if (page == 7) return s_dotii;
     if (page == 8) return s_performance;
     if (page == 9) return s_turntable;
-    return s_qoder_usage;
+    if (page == 10) return s_qoder_usage;
+    return s_pomodoro;
 }
 
 static lv_obj_t *first_enabled_screen(void)
@@ -944,6 +948,7 @@ static bool screen_enabled(lv_obj_t *screen)
     if (screen == s_performance) return page_enabled(8);
     if (screen == s_turntable) return page_enabled(9);
     if (screen == s_qoder_usage) return page_enabled(10);
+    if (screen == s_pomodoro) return page_enabled(11);
     return true;
 }
 
@@ -955,7 +960,7 @@ static lv_obj_t *enabled_return_screen(lv_obj_t *screen)
 
 static void update_page_dots(void)
 {
-    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_CYAN, COLOR_WARNING, COLOR_CYAN, COLOR_GREEN, 0xE57BB1, COLOR_VIOLET};
+    static const uint32_t active_colors[PAGE_COUNT] = {COLOR_BLUE, COLOR_BAMBU, COLOR_VIOLET, COLOR_ORANGE, COLOR_WARNING, COLOR_CYAN, COLOR_WARNING, COLOR_CYAN, COLOR_GREEN, 0xE57BB1, COLOR_VIOLET, 0xFF6B5E};
     for (uint8_t row = 0; row < PAGE_COUNT; ++row) {
         int total_width = 0;
         uint8_t count = 0;
@@ -2170,6 +2175,32 @@ static void build_turntable(void)
     make_page_dots(turntable_content(), 9);
 }
 
+static void pomodoro_clicked(lv_event_t *event)
+{
+    (void)event;
+    if (!s_screen_on || s_screen_saver_active || s_wake_touch_in_progress) return;
+    if (s_last_gesture_at != 0 && lv_tick_elaps(s_last_gesture_at) < 350) return;
+    pomodoro_screen_clicked();
+}
+
+static void pomodoro_finished(void)
+{
+    /* 到点提醒：无论当前在哪一页/是否熄屏，都亮屏跳回番茄钟页。 */
+    exit_screen_saver();
+    screen_wake();
+    load_screen(s_pomodoro, true);
+}
+
+static void build_pomodoro(void)
+{
+    s_pomodoro = pomodoro_build();
+    add_activity_event(s_pomodoro);
+    lv_obj_add_event_cb(s_pomodoro, swipe_event, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(s_pomodoro, pomodoro_clicked, LV_EVENT_CLICKED, NULL);
+    pomodoro_set_finish_callback(pomodoro_finished);
+    make_page_dots(pomodoro_content(), 11);
+}
+
 static lv_obj_t *make_dotii_part(lv_obj_t *parent, int width, int height,
                                  int x, int y, uint32_t part_color)
 {
@@ -2862,6 +2893,7 @@ static void update_snapshot(const codex_snapshot_t *snapshot)
     window_world_apply(snapshot);
     performance_monitor_apply(snapshot);
     turntable_apply(snapshot);
+    pomodoro_apply(snapshot);
     if (snapshot->docked_rotation_tenths >= DISPLAY_ANGLE_MIN_TENTHS &&
         snapshot->docked_rotation_tenths <= DISPLAY_ANGLE_MAX_TENTHS &&
         (snapshot->docked_rotation_tenths != s_display_angle_tenths ||
@@ -3328,6 +3360,7 @@ static void ui_timer(lv_timer_t *timer)
     (void)timer;
     if (xQueueReceive(s_snapshot_queue, &s_snapshot, 0) == pdTRUE) update_snapshot(&s_snapshot);
     turntable_tick();
+    pomodoro_tick();
 
     time_t now = time(NULL);
     struct tm local;
@@ -3478,6 +3511,7 @@ void state_ui_start(QueueHandle_t snapshot_queue)
     build_dotii();
     build_performance();
     build_turntable();
+    build_pomodoro();
     build_settings();
     build_control();
     build_power();

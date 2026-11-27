@@ -84,6 +84,11 @@
         <span>唱片台</span>
         <span class="module-meta" id="turntable-nav-state">读取中</span>
       </button>
+      <button class="module-tab" type="button" data-panel="pomodoro" aria-selected="false">
+        <span class="nav-icon pomodoro-icon" aria-hidden="true"></span>
+        <span>番茄钟</span>
+        <span class="module-meta" id="pomodoro-nav-state">读取中</span>
+      </button>
       <button class="module-tab system-tab" type="button" data-panel="system" aria-selected="false">
         <span class="nav-icon settings-icon" aria-hidden="true"></span>
         <span>设置</span>
@@ -998,6 +1003,39 @@
             <label class="module-switch">
               <span>启用唱片台</span>
               <input id="turntable-enabled" type="checkbox">
+              <span class="switch-track" aria-hidden="true"></span>
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel" id="panel-pomodoro" aria-labelledby="pomodoro-heading" hidden>
+        <div class="section-heading">
+          <div>
+            <h2 id="pomodoro-heading">番茄钟</h2>
+            <p>在 Dotii 表盘上专注计时：沿圆弧滑动设置分钟数，点按开始，到时全屏闪烁提醒。</p>
+          </div>
+          <span class="status-pill pomodoro-status" id="pomodoro-status" data-state="waiting" role="status" aria-live="polite">已关闭</span>
+        </div>
+
+        <div class="module-content pomodoro-content" id="pomodoro-content">
+          <form class="bambu-card module-preference-card" id="pomodoro-form">
+            <div class="card-heading"><div><h3>最大计时时长</h3><p>设备表盘可滑动设置的分钟数上限，范围 1-120；经典番茄钟为 25 分钟。</p></div><span class="status-pill" id="pomodoro-max-value">60 分钟</span></div>
+            <div class="pomodoro-max-field">
+              <input id="pomodoro-max-range" type="range" min="1" max="120" step="1" value="60" aria-label="最大计时分钟数">
+              <label class="pomodoro-max-number"><span>分钟</span><input id="pomodoro-max-input" type="number" min="1" max="120" step="1" value="60"></label>
+            </div>
+            <p class="network-note"><strong>设备本地计时</strong><span>倒计时在 Dotii 上运行，不依赖电脑在线；到时自动跳回番茄钟页闪烁提醒，点按屏幕重置。</span></p>
+            <div class="form-actions"><button class="primary-button" type="submit">保存</button></div>
+          </form>
+        </div>
+
+        <section class="module-preferences" aria-labelledby="pomodoro-preferences-heading">
+          <div class="module-preferences-heading">
+            <div><h3 id="pomodoro-preferences-heading">番茄钟设置</h3><p>启用后 Dotii 显示番茄钟表盘页；关闭后隐藏页面并停止进行中的计时。</p></div>
+            <label class="module-switch">
+              <span>启用番茄钟</span>
+              <input id="pomodoro-enabled" type="checkbox">
               <span class="switch-track" aria-hidden="true"></span>
             </label>
           </div>

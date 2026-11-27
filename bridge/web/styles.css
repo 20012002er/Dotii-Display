@@ -972,6 +972,37 @@ button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
 .turntable-status[data-state="online"] { border-color: #24573e; background: #10261b; color: #8ce7b8; }
 .turntable-status[data-state="stale"] { border-color: #70612f; background: #39321a; color: #e7ce74; }
 .turntable-status[data-state="error"] { border-color: #6b3430; background: #281412; color: #ffaaa4; }
+
+.pomodoro-icon {
+  position: relative;
+  border: 2px solid #ff6b5e;
+  border-radius: 50%;
+  -webkit-mask: none;
+  mask: none;
+}
+.pomodoro-icon::before {
+  position: absolute;
+  top: 3px;
+  left: 7px;
+  width: 2px;
+  height: 6px;
+  background: #ff6b5e;
+  content: "";
+}
+.pomodoro-icon::after {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  width: 5px;
+  height: 2px;
+  background: #ff6b5e;
+  content: "";
+}
+.pomodoro-status[data-state="online"] { border-color: #6b3430; background: #281412; color: #ffaaa4; }
+.pomodoro-max-field { display: flex; align-items: flex-end; gap: 18px; margin-top: 18px; }
+.pomodoro-max-field input[type="range"] { flex: 1; min-height: 42px; accent-color: #ff6b5e; cursor: pointer; }
+.pomodoro-max-number { display: grid; gap: 7px; width: 110px; color: var(--muted-strong); font-size: 13px; }
+.pomodoro-max-number input { min-height: 42px; padding: 0 12px; border: 1px solid #35413e; border-radius: 9px; background: #0d1211; color: var(--text); }
 .turntable-preview {
   --turntable-background: #101c1a;
   --turntable-accent: #5da9ff;

@@ -265,6 +265,8 @@ typedef struct {
     char turntable_artist[TURNTABLE_ARTIST_MAX];
     char turntable_album[TURNTABLE_ALBUM_MAX];
     char turntable_error[TURNTABLE_ERROR_MAX];
+    bool pomodoro_enabled;
+    uint32_t pomodoro_max_minutes;
     bool weather_enabled;
     bool weather_valid;
     bool weather_temperature_available;

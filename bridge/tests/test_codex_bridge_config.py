@@ -81,7 +81,7 @@ class CodexUiConfigTests(unittest.TestCase):
 
     def test_module_config_migrates_dotii_as_enabled(self) -> None:
         modules = validate_module_config({"codex": True, "bambu": False})
-        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "qoder": False, "dotii": True, "weather": False, "performance": False, "turntable": False})
+        self.assertEqual(modules, {"codex": True, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "qoder": False, "dotii": True, "weather": False, "performance": False, "turntable": False, "pomodoro": False})
 
     def test_dotii_state_prioritizes_failure_then_active_work(self) -> None:
         failed = dotii_state(
@@ -488,6 +488,8 @@ class CodexUiConfigTests(unittest.TestCase):
         bridge.performance.snapshot.return_value = performance
         bridge.turntable = mock.Mock()
         bridge.turntable.snapshot.return_value = {"enabled": False}
+        bridge.pomodoro_config = mock.Mock()
+        bridge.pomodoro_config.read.return_value = {"max_minutes": 60}
         bridge.modules = mock.Mock()
         bridge.modules.read.return_value = dict(MODULE_DEFAULTS)
         bridge.dotii = mock.Mock()
@@ -796,6 +798,8 @@ class QoderUsageWiringTests(unittest.TestCase):
         bridge.performance.snapshot.return_value = {}
         bridge.turntable = mock.Mock()
         bridge.turntable.snapshot.return_value = {"enabled": False}
+        bridge.pomodoro_config = mock.Mock()
+        bridge.pomodoro_config.read.return_value = {"max_minutes": 60}
         bridge.modules = mock.Mock()
         bridge.modules.read.return_value = dict(MODULE_DEFAULTS)
         bridge.dotii = mock.Mock()

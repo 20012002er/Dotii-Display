@@ -492,6 +492,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     snapshot->weather_enabled = false;
     snapshot->performance_enabled = false;
     snapshot->turntable_enabled = false;
+    snapshot->pomodoro_enabled = false;
     cJSON *modules = cJSON_GetObjectItemCaseSensitive(root, "modules");
     if (!cJSON_IsObject(modules)) return;
 
@@ -504,6 +505,7 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     cJSON *weather = cJSON_GetObjectItemCaseSensitive(modules, "weather");
     cJSON *performance = cJSON_GetObjectItemCaseSensitive(modules, "performance");
     cJSON *turntable = cJSON_GetObjectItemCaseSensitive(modules, "turntable");
+    cJSON *pomodoro = cJSON_GetObjectItemCaseSensitive(modules, "pomodoro");
     if (cJSON_IsBool(codex)) snapshot->codex_enabled = cJSON_IsTrue(codex);
     if (cJSON_IsBool(bambu)) snapshot->bambu_enabled = cJSON_IsTrue(bambu);
     if (cJSON_IsBool(dotii)) snapshot->dotii_enabled = cJSON_IsTrue(dotii);
@@ -513,6 +515,19 @@ static void copy_module_config(cJSON *root, codex_snapshot_t *snapshot)
     if (cJSON_IsBool(weather)) snapshot->weather_enabled = cJSON_IsTrue(weather);
     if (cJSON_IsBool(performance)) snapshot->performance_enabled = cJSON_IsTrue(performance);
     if (cJSON_IsBool(turntable)) snapshot->turntable_enabled = cJSON_IsTrue(turntable);
+    if (cJSON_IsBool(pomodoro)) snapshot->pomodoro_enabled = cJSON_IsTrue(pomodoro);
+}
+
+static void copy_pomodoro_status(cJSON *root, codex_snapshot_t *snapshot)
+{
+    /* 计时在设备本地运行，快照只携带最大分钟数；旧管理中心无此字段时用默认值。 */
+    snapshot->pomodoro_max_minutes = 60;
+    cJSON *pomodoro = cJSON_GetObjectItemCaseSensitive(root, "pomodoro");
+    if (!cJSON_IsObject(pomodoro)) return;
+    cJSON *minutes = cJSON_GetObjectItemCaseSensitive(pomodoro, "max_minutes");
+    if (cJSON_IsNumber(minutes) && minutes->valuedouble >= 1 && minutes->valuedouble <= 120) {
+        snapshot->pomodoro_max_minutes = (uint32_t)minutes->valuedouble;
+    }
 }
 
 static window_weather_t weather_condition_from_string(const char *condition)
@@ -1212,6 +1227,7 @@ static bool parse_snapshot(const char *json, codex_snapshot_t *snapshot)
     copy_weather_status(root, snapshot);
     copy_performance_status(root, snapshot);
     copy_turntable_status(root, snapshot);
+    copy_pomodoro_status(root, snapshot);
     copy_dotii_state(root, snapshot);
     ok = true;
 

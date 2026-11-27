@@ -13,7 +13,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 GENERATED = PROJECT_ROOT / "main" / "generated"
-SOURCES = [PROJECT_ROOT / "main" / "state_ui.c", PROJECT_ROOT / "main" / "turntable.c"]
+SOURCES = [PROJECT_ROOT / "main" / "state_ui.c", PROJECT_ROOT / "main" / "turntable.c",
+           PROJECT_ROOT / "main" / "pomodoro.c"]
 
 GLYPH_RE = re.compile(r'/\* U\+([0-9A-Fa-f]+) "(.)" \*/')
 MAKE_LABEL_RE = re.compile(

@@ -37,6 +37,7 @@ from notion_client import NotionConfigStore, NotionService
 from weather_client import WeatherConfigStore, WeatherService
 from performance_client import PerformanceConfigStore, PerformanceService
 from turntable_client import TurntableService
+from pomodoro_client import PomodoroConfigStore
 from claudecode_client import (
     PERMISSION_WAIT_SECONDS,
     ClaudeCodeMonitor,
@@ -104,7 +105,7 @@ CUSTOM_DEFAULTS = {
     "ring_start": "#F2C66D",
     "ring_end": "#5DA9FF",
 }
-MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "qoder": False, "dotii": True, "weather": False, "performance": False, "turntable": False}
+MODULE_DEFAULTS = {"codex": False, "bambu": False, "zai": False, "notion": False, "claudecode": False, "trae": False, "qoder": False, "dotii": True, "weather": False, "performance": False, "turntable": False, "pomodoro": False}
 
 
 def resolve_ffmpeg(runtime_folder: Path) -> str | None:
@@ -1371,6 +1372,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "notion_config": self.bridge.notion_config.public(),
             "weather_config": self.bridge.weather_config.public(),
             "performance_config": self.bridge.performance_config.read(),
+            "pomodoro_config": self.bridge.pomodoro_config.read(),
             "bluetooth": self.bridge.bluetooth.snapshot(),
             "ble_link": self.bridge.ble_link.snapshot(),
             "firmware": self.bridge.firmware.snapshot(),
@@ -1387,6 +1389,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 {"id": "weather", "name": "窗外小世界", "enabled": snapshot["modules"].get("weather", False), "available": True, "locked": False},
                 {"id": "performance", "name": "性能监控", "enabled": snapshot["modules"].get("performance", False), "available": True, "locked": False},
                 {"id": "turntable", "name": "唱片台", "enabled": snapshot["modules"].get("turntable", False), "available": True, "locked": False},
+                {"id": "pomodoro", "name": "番茄钟", "enabled": snapshot["modules"].get("pomodoro", False), "available": True, "locked": False},
             ],
         }
 
@@ -1962,6 +1965,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
+        if path == "/api/v1/admin/pomodoro/config":
+            if self._deny_nonlocal():
+                return
+            try:
+                payload = self._read_admin_action()
+                config = self.bridge.pomodoro_config.write(payload)
+                self._send_json(HTTPStatus.OK, {"ok": True, "pomodoro_config": config})
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
         if path == "/api/v1/admin/modules":
             if self._deny_nonlocal():
                 return
@@ -2084,6 +2097,7 @@ class BridgeServer(ThreadingHTTPServer):
         performance_config: PerformanceConfigStore,
         performance: PerformanceService,
         turntable: TurntableService,
+        pomodoro_config: PomodoroConfigStore,
         claudecode: ClaudeCodeMonitor,
         claudecode_permission: PermissionBroker,
         claudecode_config: ClaudeCodeConfigStore,
@@ -2125,6 +2139,7 @@ class BridgeServer(ThreadingHTTPServer):
         self.performance_config = performance_config
         self.performance = performance
         self.turntable = turntable
+        self.pomodoro_config = pomodoro_config
         self.claudecode = claudecode
         self.claudecode_permission = claudecode_permission
         self.claudecode_config = claudecode_config
@@ -2165,6 +2180,8 @@ class BridgeServer(ThreadingHTTPServer):
         snapshot["qoder"]["usage"] = self.qoder_usage.snapshot()
         modules = self.modules.read()
         snapshot["modules"] = {**modules, "custom": custom["enabled"]}
+        # 番茄钟计时在设备本地运行，快照只携带开关与最大分钟数。
+        snapshot["pomodoro"] = {"enabled": modules.get("pomodoro", False), **self.pomodoro_config.read()}
         snapshot["dotii"] = dotii_state(
             snapshot, snapshot["bambu"], modules["dotii"], self.dotii.read(),
             claudecode=snapshot["claudecode"],
@@ -2243,6 +2260,7 @@ def main() -> None:
     turntable = TurntableService(writable_root / "turntable-cache")
     turntable.start()
     turntable.set_enabled(modules.read().get("turntable", False))
+    pomodoro_config = PomodoroConfigStore(writable_root / "pomodoro.json")
     claudecode = ClaudeCodeMonitor()
     claudecode_permission = PermissionBroker(
         module_enabled=lambda: modules.read()["claudecode"])
@@ -2289,6 +2307,7 @@ def main() -> None:
                           custom, modules, dotii, display, codex_check, assets, bambu_config, bambu,
                           zai_config, zai, zai_check, notion_config, notion,
                           weather_config, weather, performance_config, performance, turntable,
+                          pomodoro_config,
                           claudecode, claudecode_permission,
                           claudecode_config,
                           trae, trae_permission,

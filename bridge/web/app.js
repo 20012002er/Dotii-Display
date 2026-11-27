@@ -23,6 +23,8 @@ const state = {
   moduleSaving: {},
   performanceConfig: null,
   performanceConfigSaving: false,
+  pomodoroConfigSaving: false,
+  pomodoroDirty: false,
   performanceRateScales: {
     disk: { max: 1024, lowerSamples: 0, sampleEpoch: 0 },
     network: { max: 1024, lowerSamples: 0, sampleEpoch: 0 },
@@ -1639,6 +1641,12 @@ function renderCollectorStatus(snapshot, modules, bridge) {
     rows.push(["唱片台", "waiting", null, ["waiting", "正在连接"]]);
   }
 
+  const pomodoroEnabled = modules.pomodoro?.enabled === true;
+  const pomodoroMax = Number(state.overview?.pomodoro_config?.max_minutes) || 60;
+  rows.push(pomodoroEnabled
+    ? ["番茄钟", "online", null, ["online", `设备本地计时 · 上限 ${pomodoroMax} 分钟`]]
+    : ["番茄钟", "disabled", null, ["disabled", "已关闭"]]);
+
   const bleLink = state.overview?.ble_link;
   if (bleLink?.enabled) {
     rows.push(bleLink.connected
@@ -2346,6 +2354,49 @@ async function updatePerformanceConfig() {
   }
 }
 
+function renderPomodoro(config = {}, enabled = false) {
+  const minutes = Math.max(1, Math.min(120, Math.round(Number(config.max_minutes)) || 60));
+  const status = byId("pomodoro-status");
+  status.dataset.state = enabled ? "online" : "waiting";
+  status.textContent = enabled ? "已启用" : "已关闭";
+  setText("pomodoro-nav-state", enabled ? "已启用" : "已关闭");
+  /* 轮询每 3 秒刷新一次；有未保存草稿时不回写，避免覆盖用户正在编辑的值。 */
+  if (state.pomodoroConfigSaving || state.pomodoroDirty) return;
+  setText("pomodoro-max-value", `${minutes} 分钟`);
+  byId("pomodoro-max-range").value = String(minutes);
+  byId("pomodoro-max-input").value = String(minutes);
+}
+
+async function savePomodoro(event) {
+  event.preventDefault();
+  if (state.pomodoroConfigSaving) return;
+  const minutes = Number(byId("pomodoro-max-input").value);
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 120) {
+    showToast("最大时长必须是 1-120 的整数分钟");
+    return;
+  }
+  state.pomodoroConfigSaving = true;
+  const button = byId("pomodoro-form").querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/v1/admin/pomodoro/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_minutes: minutes }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "番茄钟配置保存失败");
+    state.pomodoroDirty = false;
+    showToast("番茄钟配置已保存");
+  } catch (error) {
+    showToast(error.message || "番茄钟配置保存失败");
+  } finally {
+    state.pomodoroConfigSaving = false;
+    button.disabled = false;
+    await refreshOverview();
+  }
+}
+
 function renderOverview(overview) {
   state.overview = overview;
   if (!state.codexChecking && overview.codex_check) state.codexCheck = overview.codex_check;
@@ -2371,6 +2422,7 @@ function renderOverview(overview) {
   const weatherEnabled = modules.weather?.enabled === true;
   const performanceEnabled = modules.performance?.enabled === true;
   const turntableEnabled = modules.turntable?.enabled === true;
+  const pomodoroEnabled = modules.pomodoro?.enabled === true;
   const weeklyAvailable = codex.weekly_available !== false;
   const weekly = weeklyAvailable ? Math.max(0, Math.min(100, Number(codex.weekly_remaining_percent) || 0)) : 0;
   const fiveHourAvailable = codex.five_hour_available === true;
@@ -2405,6 +2457,7 @@ function renderOverview(overview) {
   if (!state.moduleSaving.weather) byId("weather-enabled").checked = weatherEnabled;
   if (!state.moduleSaving.performance) byId("performance-enabled").checked = performanceEnabled;
   if (!state.moduleSaving.turntable) byId("turntable-enabled").checked = turntableEnabled;
+  if (!state.moduleSaving.pomodoro) byId("pomodoro-enabled").checked = pomodoroEnabled;
   const incomingPerformanceConfig = normalizePerformanceConfig(overview.performance_config || {}, snapshot.performance || {});
   if (!state.performanceConfigSaving) {
     state.performanceConfig = incomingPerformanceConfig;
@@ -2418,6 +2471,7 @@ function renderOverview(overview) {
   byId("trae-content").hidden = !traeEnabled;
   byId("qoder-content").hidden = !qoderEnabled;
   byId("turntable-content").hidden = !turntableEnabled;
+  byId("pomodoro-content").hidden = !pomodoroEnabled;
   setText("codex-nav-state", codexEnabled ? (bridge.collector_state === "online" ? "在线" : bridge.collector_state === "error" ? "异常" : "连接中") : "已关闭");
   renderBambu(snapshot.bambu || {}, overview.bambu_config || {}, bambuEnabled);
   renderZai(snapshot.zai || {}, overview.zai_config || {}, zaiEnabled);
@@ -2427,6 +2481,7 @@ function renderOverview(overview) {
   renderWeather(snapshot.weather || {}, overview.weather_config || {}, weatherEnabled);
   renderPerformance(snapshot.performance || {}, state.performanceConfig || incomingPerformanceConfig, performanceEnabled);
   renderTurntable(snapshot.turntable || {}, turntableEnabled);
+  renderPomodoro(overview.pomodoro_config || {}, pomodoroEnabled);
   renderClaudecode(snapshot.claudecode || {}, claudecodeEnabled);
   renderTrae(snapshot.trae || {}, traeEnabled);
   renderQoder(snapshot.qoder || {}, qoderEnabled);
@@ -3123,6 +3178,21 @@ byId("weather-enabled").addEventListener("change", (event) => updateModule("weat
 byId("weather-form").addEventListener("submit", saveWeather);
 byId("performance-enabled").addEventListener("change", (event) => updateModule("performance", event.target.checked));
 byId("turntable-enabled").addEventListener("change", (event) => updateModule("turntable", event.target.checked));
+byId("pomodoro-enabled").addEventListener("change", (event) => updateModule("pomodoro", event.target.checked));
+byId("pomodoro-form").addEventListener("submit", savePomodoro);
+byId("pomodoro-max-range").addEventListener("input", (event) => {
+  state.pomodoroDirty = true;
+  byId("pomodoro-max-input").value = event.target.value;
+  setText("pomodoro-max-value", `${event.target.value} 分钟`);
+});
+byId("pomodoro-max-input").addEventListener("input", (event) => {
+  state.pomodoroDirty = true;
+  const minutes = Number(event.target.value);
+  if (Number.isInteger(minutes) && minutes >= 1 && minutes <= 120) {
+    byId("pomodoro-max-range").value = String(minutes);
+    setText("pomodoro-max-value", `${minutes} 分钟`);
+  }
+});
 PERFORMANCE_METRICS.forEach((metric) => {
   byId(`performance-${metric}-enabled`).addEventListener("change", updatePerformanceConfig);
 });

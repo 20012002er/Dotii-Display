@@ -11,6 +11,7 @@ idf_component_register(
         "window_world.c"
         "performance_monitor.c"
         "turntable.c"
+        "pomodoro.c"
         "generated/answer_book_data.c"
         "generated/ui_font_detail_20.c"
         "generated/ui_font_fixed_20.c"
